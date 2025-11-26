@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(mysql:*)",
+      "Bash(wp theme list:*)",
+      "WebFetch(domain:www.seminargo.com)",
+      "Bash(wp post list:*)",
+      "Bash(wp db query:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

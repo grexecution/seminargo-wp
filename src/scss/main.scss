@@ -1,0 +1,60 @@
+// Main SCSS File - Entry point for all styles
+// ============================================
+
+// 1. Settings - Global variables, config
+@import 'settings/variables';
+@import 'settings/breakpoints';
+@import 'settings/typography';
+@import 'settings/colors';
+
+// 2. Tools - Mixins and functions
+@import 'tools/mixins';
+@import 'tools/functions';
+@import 'tools/animations';
+
+// 3. Generic - Reset, normalize, box-sizing
+@import 'generic/normalize';
+@import 'generic/reset';
+@import 'generic/box-sizing';
+
+// 4. Elements - Bare HTML elements
+@import 'elements/base';
+@import 'elements/typography';
+@import 'elements/links';
+@import 'elements/forms';
+@import 'elements/tables';
+@import 'elements/media';
+
+// 5. Objects - Design patterns
+@import 'objects/container';
+@import 'objects/grid';
+@import 'objects/media-object';
+
+// 6. Components - Complete UI components
+@import 'components/header';
+@import 'components/navigation';
+@import 'components/footer';
+@import 'components/buttons';
+@import 'components/cards';
+@import 'components/pagination';
+@import 'components/widgets';
+@import 'components/comments';
+@import 'components/search-form';
+@import 'components/author-bio';
+
+// 7. Layouts - Page layouts
+@import 'layouts/single';
+@import 'layouts/archive';
+@import 'layouts/page';
+@import 'layouts/sidebar';
+@import 'layouts/404';
+
+// 8. Utilities - Helper classes
+@import 'utilities/accessibility';
+@import 'utilities/spacing';
+@import 'utilities/text';
+@import 'utilities/visibility';
+@import 'utilities/responsive';
+
+// 9. Shame - Quick fixes and hacks (temporary)
+@import 'shame';
