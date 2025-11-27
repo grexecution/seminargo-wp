@@ -15,10 +15,27 @@ $hotel = $args;
         <div class="hotel-card-image">
             <img src="<?php echo esc_url( $hotel['image'] ); ?>" alt="<?php echo esc_attr( $hotel['title'] ); ?>" loading="lazy">
 
-            <!-- Stars Badge -->
-            <?php if ( ! empty( $hotel['stars'] ) ) : ?>
-                <div class="hotel-stars-badge">
-                    <?php echo str_repeat( '★', $hotel['stars'] ); ?>
+            <!-- Rating Badge (top-left) -->
+            <?php if ( ! empty( $hotel['rating'] ) && $hotel['rating'] > 0 ) :
+                $rating_out_of_10 = floatval( $hotel['rating'] );
+                $rating_out_of_5 = $rating_out_of_10 / 2;
+                $full_rating_stars = floor( $rating_out_of_5 );
+                $partial_fill = ( $rating_out_of_5 - $full_rating_stars ) * 100;
+                $empty_stars = 5 - ceil( $rating_out_of_5 );
+            ?>
+                <div class="hotel-rating-badge">
+                    <div class="rating-stars-container">
+                        <?php for ( $i = 0; $i < $full_rating_stars; $i++ ) : ?>
+                            <span class="star full">★</span>
+                        <?php endfor; ?>
+                        <?php if ( $partial_fill > 0 && $full_rating_stars < 5 ) : ?>
+                            <span class="star partial" style="--fill-percent: <?php echo $partial_fill; ?>%;">★</span>
+                        <?php endif; ?>
+                        <?php for ( $i = 0; $i < $empty_stars; $i++ ) : ?>
+                            <span class="star empty">★</span>
+                        <?php endfor; ?>
+                    </div>
+                    <span class="rating-score"><?php echo number_format( $rating_out_of_10, 1 ); ?>/10</span>
                 </div>
             <?php endif; ?>
 
@@ -47,31 +64,6 @@ $hotel = $args;
                     <span><?php echo esc_html( $hotel['location'] ); ?></span>
                 </div>
             </div>
-
-            <!-- Rating -->
-            <?php if ( ! empty( $hotel['rating'] ) ) : ?>
-                <div class="hotel-rating">
-                    <div class="rating-stars">
-                        <?php
-                        $full_stars = floor( $hotel['rating'] );
-                        $half_star = ( $hotel['rating'] - $full_stars ) >= 0.5;
-
-                        for ( $i = 0; $i < $full_stars; $i++ ) {
-                            echo '<span class="star filled">★</span>';
-                        }
-                        if ( $half_star ) {
-                            echo '<span class="star half">★</span>';
-                        }
-                        $empty_stars = 5 - $full_stars - ( $half_star ? 1 : 0 );
-                        for ( $i = 0; $i < $empty_stars; $i++ ) {
-                            echo '<span class="star">★</span>';
-                        }
-                        ?>
-                    </div>
-                    <span class="rating-score"><?php echo number_format( $hotel['rating'], 1 ); ?></span>
-                    <span class="rating-reviews">(<?php echo esc_html( $hotel['reviews'] ); ?> Bewertungen)</span>
-                </div>
-            <?php endif; ?>
 
             <!-- Hotel Info Grid -->
             <div class="hotel-info-grid">
@@ -138,11 +130,8 @@ $hotel = $args;
 
         </div>
 
-        <!-- Hotel Footer with Price -->
+        <!-- Hotel Footer -->
         <div class="hotel-card-footer">
-            <div class="price-info">
-                <span class="price-amount-request"><?php esc_html_e( 'Preis auf Anfrage', 'seminargo' ); ?></span>
-            </div>
             <div class="card-action">
                 <span class="btn-details"><?php esc_html_e( 'Details ansehen', 'seminargo' ); ?></span>
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -153,11 +142,4 @@ $hotel = $args;
         </div>
 
     </a>
-
-    <!-- Wishlist Button -->
-    <button class="btn-wishlist" aria-label="<?php esc_attr_e( 'Zur Merkliste hinzufügen', 'seminargo' ); ?>" data-hotel-id="<?php echo esc_attr( $hotel['id'] ); ?>">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-        </svg>
-    </button>
 </article>

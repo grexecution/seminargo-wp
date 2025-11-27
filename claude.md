@@ -32,6 +32,74 @@
 
 **IMPORTANT**: No section should exceed or be narrower than the global max-width. All content must align vertically when scrolling.
 
+---
+
+## 🎯 CRITICAL: Section Headers Pattern
+
+### Standard Section Header Structure
+**ALL content sections must use the consistent section header pattern with tagline, title, and accent line:**
+
+```html
+<div class="section-header">
+    <span class="section-tagline">Tagline Text</span>
+    <h2 class="section-title">Main Title</h2>
+</div>
+```
+
+### Section Header Styling
+```css
+.section-header {
+    text-align: center;
+    margin-bottom: var(--spacing-3xl);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.section-tagline {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #AC2A6E;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.75rem;
+}
+
+.section-header .section-title {
+    color: var(--color-text);
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+    position: relative;
+    display: inline-block;
+}
+
+.section-header .section-title::after {
+    content: '';
+    display: block;
+    width: 60px;
+    height: 3px;
+    background: linear-gradient(90deg, #AC2A6E, #d64a94);
+    margin: 1rem auto 0;
+    border-radius: 2px;
+}
+```
+
+### Usage Guidelines
+1. **Always use this pattern** for major content sections (featured content, listings, categories, etc.)
+2. **Tagline**: Short, descriptive text (2-4 words) in uppercase berry color
+3. **Title**: Main heading describing the section content
+4. **Accent line**: Gradient underline automatically added via CSS ::after
+
+### Examples
+- Tagline: "Unsere Empfehlungen" / Title: "Entdecken Sie unsere Top-Veranstaltungsorte"
+- Tagline: "Für jeden Anlass" / Title: "Finden Sie Ihre perfekte Veranstaltungsart"
+- Tagline: "Beliebte Regionen" / Title: "Angesagte Locations"
+- Tagline: "Weitere Optionen" / Title: "Ähnliche Hotels"
+
+---
+
 ## 📐 Design Philosophy
 
 Our design system follows a **mobile-first**, **content-first**, and **accessibility-first** approach. Every design decision prioritizes clarity, usability, and performance across all devices and user abilities.

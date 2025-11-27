@@ -19,56 +19,39 @@ get_header(); ?>
                         <p class="hero-subtitle">Über 24.000 Seminarhotels in Deutschland und Österreich</p>
                     </div>
 
-                    <!-- Custom Search from Archive Page -->
-                    <div class="search-filters-wrapper">
-                        <form id="hotel-search-form" class="hotel-search-form" method="GET" action="<?php echo esc_url( home_url( '/seminarhotels' ) ); ?>">
-
-                            <!-- Main Search Bar -->
-                            <div class="search-bar-main">
-                                <div class="search-field search-location">
-                                    <label for="search-location">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                            <circle cx="12" cy="10" r="3"></circle>
-                                        </svg>
-                                    </label>
-                                    <input type="text" id="search-location" name="location" placeholder="Wo? (Ort, Region oder PLZ)">
-                                </div>
-
-                                <div class="search-field search-capacity">
-                                    <label for="search-capacity">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                                            <circle cx="9" cy="7" r="4"></circle>
-                                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                                        </svg>
-                                    </label>
-                                    <input type="number" id="search-capacity" name="capacity" placeholder="Personen" min="1">
-                                </div>
-
-                                <div class="search-field search-date">
-                                    <label for="search-date">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                            <line x1="16" y1="2" x2="16" y2="6"></line>
-                                            <line x1="8" y1="2" x2="8" y2="6"></line>
-                                            <line x1="3" y1="10" x2="21" y2="10"></line>
-                                        </svg>
-                                    </label>
-                                    <input type="date" id="search-date" name="date">
-                                </div>
-
-                                <button type="submit" class="btn-search-submit">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <circle cx="11" cy="11" r="8"></circle>
-                                        <path d="m21 21-4.35-4.35"></path>
-                                    </svg>
-                                    <span><?php esc_html_e( 'Suchen', 'seminargo' ); ?></span>
-                                </button>
-                            </div>
-
-                        </form>
+                    <!-- Seminargo Search Widget -->
+                    <div class="search-widget-wrapper">
+                        <div class="widget-skeleton" id="widget-skeleton">
+                            <div class="skeleton-field"></div>
+                            <div class="skeleton-field"></div>
+                            <div class="skeleton-field skeleton-field-small"></div>
+                            <div class="skeleton-button"></div>
+                        </div>
+                        <div id="seminargo-widget" data-platform-url="https://finder.dev.seminargo.eu/" style="opacity: 0; transition: opacity 0.3s ease;"></div>
+                        <script>
+                            (function() {
+                                var script = document.createElement('script');
+                                script.src = 'https://platform-widget.dev.seminargo.eu/widget.js';
+                                script.onload = function() {
+                                    var checkWidget = setInterval(function() {
+                                        var widget = document.getElementById('seminargo-widget');
+                                        if (widget && widget.children.length > 0) {
+                                            // Widget loaded - fade it in and hide skeleton
+                                            widget.style.opacity = '1';
+                                            var skeleton = document.getElementById('widget-skeleton');
+                                            if (skeleton) {
+                                                skeleton.style.opacity = '0';
+                                                setTimeout(function() {
+                                                    skeleton.style.display = 'none';
+                                                }, 300);
+                                            }
+                                            clearInterval(checkWidget);
+                                        }
+                                    }, 50);
+                                };
+                                document.head.appendChild(script);
+                            })();
+                        </script>
                     </div>
                 </div>
             </div>
@@ -173,80 +156,101 @@ get_header(); ?>
         <!-- Hotels Section -->
         <section class="hotels-section">
             <div class="container">
-                <h2 class="section-title">Entdecken Sie unsere Top-Veranstaltungsorte</h2>
+                <div class="section-header">
+                    <span class="section-tagline">Unsere Empfehlungen</span>
+                    <h2 class="section-title">Entdecken Sie unsere Top-Veranstaltungsorte</h2>
+                </div>
                 <div class="hotels-grid">
                     <?php
-                    // Hotel data - in production this would come from database or API
-                    $hotels = array(
-                        array(
-                            'image' => 'https://images.seminargo.pro/hotel-83421-4-400x300-FIT_AND_TRIM-f09c5c96e1bc6e5e8f88c37c951bbaa2.webp',
-                            'title' => 'Dorint Hotel & Sportresort',
-                            'location' => 'Winterberg/Sauerland',
-                            'rooms' => '32 Tagungsräume für max. 500',
-                            'bedrooms' => '135 Zimmer ab 83,00 EUR',
-                            'link' => 'https://finder.dev.seminargo.eu/hotel-83421'
+                    // Query featured hotels from WordPress (only those marked for landing page)
+                    $featured_hotels = new WP_Query( array(
+                        'post_type'      => 'hotel',
+                        'posts_per_page' => 6,
+                        'orderby'        => 'rand',
+                        'post_status'    => 'publish',
+                        'meta_query'     => array(
+                            array(
+                                'key'     => 'featured_on_landing',
+                                'value'   => '1',
+                                'compare' => '=',
+                            ),
                         ),
-                        array(
-                            'image' => 'https://images.seminargo.pro/hotel-3111-2-400x300-FIT_AND_TRIM-fea59c5c951cbc623e866c7a87b23e81.webp',
-                            'title' => 'Hotel Residence',
-                            'location' => 'Bad Griesbach',
-                            'rooms' => '6 Tagungsräume für max. 220',
-                            'bedrooms' => '100 Zimmer ab 79,00 EUR',
-                            'link' => 'https://finder.dev.seminargo.eu/hotel-3111'
-                        ),
-                        array(
-                            'image' => 'https://images.seminargo.pro/hotel-9227-2-400x300-FIT_AND_TRIM-f74f04e91f4e5b0aef5f436b93d09f07.webp',
-                            'title' => 'Hotel Esperanto',
-                            'location' => 'Fulda',
-                            'rooms' => '21 Tagungsräume für max. 1700',
-                            'bedrooms' => '265 Zimmer ab 89,00 EUR',
-                            'link' => 'https://finder.dev.seminargo.eu/hotel-9227'
-                        ),
-                        array(
-                            'image' => 'https://images.seminargo.pro/hotel-77341-13-400x300-FIT_AND_TRIM-a017c8c1f2e50bc83e82e7b5c438bdf4.webp',
-                            'title' => 'Kloster Maria Hilf',
-                            'location' => 'Bühl',
-                            'rooms' => '8 Tagungsräume für max. 80',
-                            'bedrooms' => '37 Zimmer',
-                            'link' => 'https://finder.dev.seminargo.eu/hotel-77341'
-                        ),
-                        array(
-                            'image' => 'https://images.seminargo.pro/hotel-70161-20-400x300-FIT_AND_TRIM-3e5c5e5bc951c2c623e86847193d09b4.webp',
-                            'title' => 'Kloster Schöntal',
-                            'location' => 'Schöntal',
-                            'rooms' => '25 Tagungsräume für max. 250',
-                            'bedrooms' => '140 Zimmer',
-                            'link' => 'https://finder.dev.seminargo.eu/hotel-70161'
-                        ),
-                        array(
-                            'image' => 'https://images.seminargo.pro/hotel-88251-8-400x300-FIT_AND_TRIM-e40c4761df5e8ce93e85f437b93d0961.webp',
-                            'title' => 'Hotel Villa Toskana',
-                            'location' => 'Leimen',
-                            'rooms' => '8 Tagungsräume für max. 100',
-                            'bedrooms' => '146 Zimmer ab 99,00 EUR',
-                            'link' => 'https://finder.dev.seminargo.eu/hotel-88251'
-                        )
-                    );
+                    ) );
 
-                    foreach ($hotels as $hotel) : ?>
-                        <div class="hotel-card">
-                            <a href="<?php echo esc_url($hotel['link']); ?>" target="_blank">
+                    if ( $featured_hotels->have_posts() ) :
+                        while ( $featured_hotels->have_posts() ) : $featured_hotels->the_post();
+                            // Get hotel image
+                            $hotel_image = get_the_post_thumbnail_url( get_the_ID(), 'large' );
+                            if ( ! $hotel_image ) {
+                                $gallery = get_post_meta( get_the_ID(), 'gallery', true );
+                                if ( is_array( $gallery ) && ! empty( $gallery ) ) {
+                                    $hotel_image = $gallery[0];
+                                } else {
+                                    $hotel_image = 'https://images.seminargo.pro/hotel-83421-4-400x300-FIT_AND_TRIM-f09c5c96e1bc6e5e8f88c37c951bbaa2.webp';
+                                }
+                            }
+
+                            // Get hotel meta
+                            $location = get_post_meta( get_the_ID(), 'location', true ) ?: get_post_meta( get_the_ID(), 'business_address_1', true ) ?: '';
+                            $rooms = intval( get_post_meta( get_the_ID(), 'rooms', true ) );
+                            $capacity = intval( get_post_meta( get_the_ID(), 'capacity', true ) );
+                            $bedrooms = intval( get_post_meta( get_the_ID(), 'bedrooms', true ) );
+
+                    ?>
+                        <div class="hotel-card featured-hotel-card">
+                            <a href="<?php echo esc_url( get_permalink() ); ?>">
                                 <div class="hotel-image">
-                                    <img src="<?php echo esc_url($hotel['image']); ?>" alt="<?php echo esc_attr($hotel['title']); ?>">
+                                    <img src="<?php echo esc_url( $hotel_image ); ?>" alt="<?php echo esc_attr( get_the_title() ); ?>" loading="lazy">
                                 </div>
                                 <div class="hotel-content">
-                                    <h3 class="hotel-title"><?php echo esc_html($hotel['title']); ?></h3>
-                                    <p class="hotel-location"><?php echo esc_html($hotel['location']); ?></p>
-                                    <div class="hotel-info">
-                                        <span class="hotel-rooms"><?php echo esc_html($hotel['rooms']); ?></span>
-                                        <?php if (!empty($hotel['bedrooms'])) : ?>
-                                            <span class="hotel-bedrooms"><?php echo esc_html($hotel['bedrooms']); ?></span>
+                                    <h3 class="hotel-title"><?php the_title(); ?></h3>
+                                    <?php if ( $location ) : ?>
+                                        <p class="hotel-location">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                                <circle cx="12" cy="10" r="3"></circle>
+                                            </svg>
+                                            <?php echo esc_html( $location ); ?>
+                                        </p>
+                                    <?php endif; ?>
+                                    <?php if ( $rooms > 0 || $capacity > 0 ) : ?>
+                                    <div class="hotel-info-features">
+                                        <?php if ( $rooms > 0 ) : ?>
+                                        <div class="info-feature">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                            </svg>
+                                            <div class="info-feature-content">
+                                                <span class="info-feature-value"><?php echo esc_html( $rooms ); ?></span>
+                                                <span class="info-feature-label"><?php esc_html_e( 'Tagungsräume', 'seminargo' ); ?></span>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                        <?php if ( $capacity > 0 ) : ?>
+                                        <div class="info-feature">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                                <circle cx="9" cy="7" r="4"></circle>
+                                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                            </svg>
+                                            <div class="info-feature-content">
+                                                <span class="info-feature-value"><?php echo esc_html( $capacity ); ?></span>
+                                                <span class="info-feature-label"><?php esc_html_e( 'max. Personen', 'seminargo' ); ?></span>
+                                            </div>
+                                        </div>
                                         <?php endif; ?>
                                     </div>
+                                    <?php endif; ?>
                                 </div>
                             </a>
                         </div>
-                    <?php endforeach; ?>
+                    <?php
+                        endwhile;
+                        wp_reset_postdata();
+                    endif;
+                    ?>
                 </div>
             </div>
         </section>
@@ -254,7 +258,10 @@ get_header(); ?>
         <!-- Event Types Section -->
         <section class="event-types-section">
             <div class="container">
-                <h2 class="section-title">Finden Sie Ihre perfekte Veranstaltungsart</h2>
+                <div class="section-header">
+                    <span class="section-tagline">Für jeden Anlass</span>
+                    <h2 class="section-title">Finden Sie Ihre perfekte Veranstaltungsart</h2>
+                </div>
                 <div class="event-types-grid">
                     <?php
                     $event_types = array(
@@ -318,7 +325,10 @@ get_header(); ?>
         <!-- Popular Locations Section -->
         <section class="popular-locations-section">
             <div class="container">
-                <h2 class="section-title">Angesagte Locations</h2>
+                <div class="section-header">
+                    <span class="section-tagline">Beliebte Regionen</span>
+                    <h2 class="section-title">Angesagte Locations</h2>
+                </div>
                 <div class="locations-grid">
                     <?php
                     $locations = array(

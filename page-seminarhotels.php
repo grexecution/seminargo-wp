@@ -12,158 +12,12 @@ get_header();
 <div id="primary" class="content-area seminarhotels-archive">
     <main id="main" class="site-main">
 
-        <!-- Hero Search Section -->
+        <!-- Hero Section -->
         <section class="seminarhotels-hero">
             <div class="container">
                 <div class="hero-content">
-                    <h1 class="page-title"><?php esc_html_e( 'Finden Sie Ihr perfektes Seminarhotel', 'seminargo' ); ?></h1>
-                    <p class="page-subtitle"><?php esc_html_e( 'Über 24.000 Seminarhotels in Deutschland und Österreich', 'seminargo' ); ?></p>
-                </div>
-
-                <!-- Advanced Search Filters -->
-                <div class="search-filters-wrapper">
-                    <form id="hotel-search-form" class="hotel-search-form" method="GET">
-
-                        <!-- Main Search Bar -->
-                        <div class="search-bar-main">
-                            <div class="search-field search-location">
-                                <label for="search-location">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                        <circle cx="12" cy="10" r="3"></circle>
-                                    </svg>
-                                </label>
-                                <input type="text" id="search-location" name="location" placeholder="Wo? (Ort, Region oder PLZ)" value="<?php echo esc_attr( isset( $_GET['location'] ) ? $_GET['location'] : '' ); ?>">
-                            </div>
-
-                            <div class="search-field search-capacity">
-                                <label for="search-capacity">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                                        <circle cx="9" cy="7" r="4"></circle>
-                                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                                    </svg>
-                                </label>
-                                <input type="number" id="search-capacity" name="capacity" placeholder="Personen" min="1" value="<?php echo esc_attr( isset( $_GET['capacity'] ) ? $_GET['capacity'] : '' ); ?>">
-                            </div>
-
-                            <div class="search-field search-date">
-                                <label for="search-date">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                                        <line x1="3" y1="10" x2="21" y2="10"></line>
-                                    </svg>
-                                </label>
-                                <input type="date" id="search-date" name="date" value="<?php echo esc_attr( isset( $_GET['date'] ) ? $_GET['date'] : '' ); ?>">
-                            </div>
-
-                            <button type="button" class="toggle-filters" id="toggle-filters" aria-label="<?php esc_attr_e( 'Weitere Filter', 'seminargo' ); ?>">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                                </svg>
-                            </button>
-
-                            <button type="submit" class="btn-search-submit">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="11" cy="11" r="8"></circle>
-                                    <path d="m21 21-4.35-4.35"></path>
-                                </svg>
-                                <span><?php esc_html_e( 'Suchen', 'seminargo' ); ?></span>
-                            </button>
-                        </div>
-
-                        <!-- Advanced Filters Panel -->
-                        <div class="advanced-filters" id="advanced-filters">
-                            <div class="filters-grid">
-
-                                <!-- Price Range -->
-                                <div class="filter-group">
-                                    <label><?php esc_html_e( 'Preis pro Person/Nacht', 'seminargo' ); ?></label>
-                                    <div class="price-range-inputs">
-                                        <input type="number" name="price_min" placeholder="Von €" value="<?php echo esc_attr( isset( $_GET['price_min'] ) ? $_GET['price_min'] : '' ); ?>">
-                                        <span>-</span>
-                                        <input type="number" name="price_max" placeholder="Bis €" value="<?php echo esc_attr( isset( $_GET['price_max'] ) ? $_GET['price_max'] : '' ); ?>">
-                                    </div>
-                                </div>
-
-                                <!-- Stars Rating -->
-                                <div class="filter-group">
-                                    <label><?php esc_html_e( 'Sterne', 'seminargo' ); ?></label>
-                                    <div class="checkbox-group">
-                                        <?php for ( $i = 5; $i >= 3; $i-- ) : ?>
-                                            <label class="checkbox-label">
-                                                <input type="checkbox" name="stars[]" value="<?php echo $i; ?>" <?php echo ( isset( $_GET['stars'] ) && in_array( $i, (array) $_GET['stars'] ) ) ? 'checked' : ''; ?>>
-                                                <span><?php echo str_repeat( '★', $i ); ?></span>
-                                            </label>
-                                        <?php endfor; ?>
-                                    </div>
-                                </div>
-
-                                <!-- Event Type -->
-                                <div class="filter-group">
-                                    <label><?php esc_html_e( 'Veranstaltungsart', 'seminargo' ); ?></label>
-                                    <select name="event_type" class="filter-select">
-                                        <option value=""><?php esc_html_e( 'Alle Arten', 'seminargo' ); ?></option>
-                                        <option value="seminar" <?php selected( isset( $_GET['event_type'] ) ? $_GET['event_type'] : '', 'seminar' ); ?>><?php esc_html_e( 'Seminar', 'seminargo' ); ?></option>
-                                        <option value="tagung" <?php selected( isset( $_GET['event_type'] ) ? $_GET['event_type'] : '', 'tagung' ); ?>><?php esc_html_e( 'Tagung', 'seminargo' ); ?></option>
-                                        <option value="konferenz" <?php selected( isset( $_GET['event_type'] ) ? $_GET['event_type'] : '', 'konferenz' ); ?>><?php esc_html_e( 'Konferenz', 'seminargo' ); ?></option>
-                                        <option value="workshop" <?php selected( isset( $_GET['event_type'] ) ? $_GET['event_type'] : '', 'workshop' ); ?>><?php esc_html_e( 'Workshop', 'seminargo' ); ?></option>
-                                    </select>
-                                </div>
-
-                                <!-- Room Configuration -->
-                                <div class="filter-group">
-                                    <label><?php esc_html_e( 'Raumbestuhlung', 'seminargo' ); ?></label>
-                                    <select name="seating" class="filter-select">
-                                        <option value=""><?php esc_html_e( 'Alle', 'seminargo' ); ?></option>
-                                        <option value="theater" <?php selected( isset( $_GET['seating'] ) ? $_GET['seating'] : '', 'theater' ); ?>><?php esc_html_e( 'Bestuhlung', 'seminargo' ); ?></option>
-                                        <option value="classroom" <?php selected( isset( $_GET['seating'] ) ? $_GET['seating'] : '', 'classroom' ); ?>><?php esc_html_e( 'Klassenzimmer', 'seminargo' ); ?></option>
-                                        <option value="u-shape" <?php selected( isset( $_GET['seating'] ) ? $_GET['seating'] : '', 'u-shape' ); ?>><?php esc_html_e( 'U-Form', 'seminargo' ); ?></option>
-                                        <option value="banquet" <?php selected( isset( $_GET['seating'] ) ? $_GET['seating'] : '', 'banquet' ); ?>><?php esc_html_e( 'Bankett', 'seminargo' ); ?></option>
-                                    </select>
-                                </div>
-
-                                <!-- Amenities -->
-                                <div class="filter-group filter-group-full">
-                                    <label><?php esc_html_e( 'Ausstattung', 'seminargo' ); ?></label>
-                                    <div class="checkbox-group checkbox-grid">
-                                        <?php
-                                        $amenities = array(
-                                            'wifi' => 'WLAN',
-                                            'parking' => 'Parkplatz',
-                                            'spa' => 'Spa & Wellness',
-                                            'restaurant' => 'Restaurant',
-                                            'pool' => 'Pool',
-                                            'gym' => 'Fitness',
-                                            'terrace' => 'Terrasse/Garten',
-                                            'ac' => 'Klimaanlage',
-                                        );
-                                        foreach ( $amenities as $key => $label ) :
-                                        ?>
-                                            <label class="checkbox-label">
-                                                <input type="checkbox" name="amenities[]" value="<?php echo esc_attr( $key ); ?>" <?php echo ( isset( $_GET['amenities'] ) && in_array( $key, (array) $_GET['amenities'] ) ) ? 'checked' : ''; ?>>
-                                                <span><?php echo esc_html( $label ); ?></span>
-                                            </label>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-
-                            </div>
-
-                            <div class="filters-actions">
-                                <button type="button" class="btn-clear-filters" id="clear-filters">
-                                    <?php esc_html_e( 'Filter zurücksetzen', 'seminargo' ); ?>
-                                </button>
-                                <button type="submit" class="btn-apply-filters">
-                                    <?php esc_html_e( 'Filter anwenden', 'seminargo' ); ?>
-                                </button>
-                            </div>
-                        </div>
-
-                    </form>
+                    <h1 class="page-title"><?php esc_html_e( 'Seminarhotels', 'seminargo' ); ?></h1>
+                    <p class="page-subtitle"><?php esc_html_e( 'Entdecken Sie unsere Auswahl an Seminarhotels', 'seminargo' ); ?></p>
                 </div>
             </div>
         </section>
@@ -177,20 +31,7 @@ get_header();
                 $paged = isset( $_GET['paged'] ) ? max( 1, intval( $_GET['paged'] ) ) : 1;
                 $per_page = 9; // Hotels per page
 
-                // Get filter parameters from URL
-                $filters = array(
-                    'location' => isset( $_GET['location'] ) ? sanitize_text_field( $_GET['location'] ) : '',
-                    'capacity' => isset( $_GET['capacity'] ) ? intval( $_GET['capacity'] ) : 0,
-                    'date' => isset( $_GET['date'] ) ? sanitize_text_field( $_GET['date'] ) : '',
-                    'price_min' => isset( $_GET['price_min'] ) ? intval( $_GET['price_min'] ) : 0,
-                    'price_max' => isset( $_GET['price_max'] ) ? intval( $_GET['price_max'] ) : 0,
-                    'stars' => isset( $_GET['stars'] ) ? (array) $_GET['stars'] : array(),
-                    'event_type' => isset( $_GET['event_type'] ) ? sanitize_text_field( $_GET['event_type'] ) : '',
-                    'seating' => isset( $_GET['seating'] ) ? sanitize_text_field( $_GET['seating'] ) : '',
-                    'amenities' => isset( $_GET['amenities'] ) ? (array) $_GET['amenities'] : array(),
-                );
-
-                // Build WP_Query args based on filters
+                // Build WP_Query args
                 $query_args = array(
                     'post_type'      => 'hotel',
                     'posts_per_page' => $per_page,
@@ -200,74 +41,7 @@ get_header();
                     'order'          => 'DESC',
                 );
 
-                // Apply filters to query
-                $meta_query = array( 'relation' => 'AND' );
-                $tax_query = array( 'relation' => 'AND' );
-
-                // Location filter (search in post title, content, or custom field)
-                if ( !empty( $filters['location'] ) ) {
-                    $query_args['s'] = $filters['location'];
-                }
-
-                // Capacity filter
-                if ( !empty( $filters['capacity'] ) ) {
-                    $meta_query[] = array(
-                        'key'     => 'capacity',
-                        'value'   => intval( $filters['capacity'] ),
-                        'compare' => '>=',
-                        'type'    => 'NUMERIC'
-                    );
-                }
-
-                // Stars filter
-                if ( !empty( $filters['stars'] ) ) {
-                    $meta_query[] = array(
-                        'key'     => 'stars',
-                        'value'   => array_map( 'intval', $filters['stars'] ),
-                        'compare' => 'IN',
-                        'type'    => 'NUMERIC'
-                    );
-                }
-
-                // Event type filter (assuming taxonomy)
-                if ( !empty( $filters['event_type'] ) ) {
-                    $tax_query[] = array(
-                        'taxonomy' => 'event_type',
-                        'field'    => 'slug',
-                        'terms'    => sanitize_title( $filters['event_type'] ),
-                    );
-                }
-
-                // Seating filter (assuming taxonomy)
-                if ( !empty( $filters['seating'] ) ) {
-                    $tax_query[] = array(
-                        'taxonomy' => 'seating_type',
-                        'field'    => 'slug',
-                        'terms'    => sanitize_title( $filters['seating'] ),
-                    );
-                }
-
-                // Amenities filter (assuming taxonomy or serialized meta)
-                if ( !empty( $filters['amenities'] ) ) {
-                    $tax_query[] = array(
-                        'taxonomy' => 'amenity',
-                        'field'    => 'slug',
-                        'terms'    => array_map( 'sanitize_title', $filters['amenities'] ),
-                        'operator' => 'AND',
-                    );
-                }
-
-                // Add meta query if not empty
-                if ( count( $meta_query ) > 1 ) {
-                    $query_args['meta_query'] = $meta_query;
-                }
-
-                // Add tax query if not empty
-                if ( count( $tax_query ) > 1 ) {
-                    $query_args['tax_query'] = $tax_query;
-                }
-
-                // First, get total count with filters (for display)
+                // Get total count
                 $count_args = $query_args;
                 $count_args['posts_per_page'] = -1;
                 $count_args['fields'] = 'ids';
@@ -389,90 +163,105 @@ get_header();
                 }
 
                 if ( $hotels_query->have_posts() ) {
-                    $demo_index = 0;
                     while ( $hotels_query->have_posts() ) {
                         $hotels_query->the_post();
+                        $post_id = get_the_ID();
 
                         // Get the featured image
-                        $image_url = get_the_post_thumbnail_url( get_the_ID(), 'seminargo-thumbnail' );
+                        $image_url = get_the_post_thumbnail_url( $post_id, 'seminargo-thumbnail' );
                         if ( !$image_url ) {
-                            // Fallback to demo image
-                            $image_url = $demo_hotels[ $demo_index % count( $demo_hotels ) ]['image'];
+                            // Try API media
+                            $medias = json_decode( get_post_meta( $post_id, 'medias_json', true ), true );
+                            if ( !empty( $medias[0]['previewUrl'] ) ) {
+                                $image_url = $medias[0]['previewUrl'];
+                            } else {
+                                $image_url = 'https://placehold.co/400x300/e2e8f0/64748b?text=Hotel';
+                            }
                         }
 
-                        // Get custom fields (adjust field names based on your actual setup)
-                        // IMPORTANT: Always use get_permalink() for the link, never use external URLs
+                        // Build location - prioritize city, then address (not country code)
+                        $city = get_post_meta( $post_id, 'business_city', true );
+                        $address = get_post_meta( $post_id, 'business_address_1', true );
+                        if ( !empty( $city ) ) {
+                            $location = $city;
+                        } elseif ( !empty( $address ) ) {
+                            $location = $address;
+                        } else {
+                            $location = '';
+                        }
+
+                        // Get hotel data using new API fields
                         $hotel_data = array(
-                            'id'        => get_the_ID(),
+                            'id'        => $post_id,
                             'image'     => $image_url,
                             'title'     => get_the_title(),
-                            'location'  => get_post_meta( get_the_ID(), 'location', true ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['location'],
-                            'rating'    => floatval( get_post_meta( get_the_ID(), 'rating', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['rating'],
-                            'reviews'   => intval( get_post_meta( get_the_ID(), 'reviews', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['reviews'],
-                            'stars'     => intval( get_post_meta( get_the_ID(), 'stars', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['stars'],
-                            'rooms'     => intval( get_post_meta( get_the_ID(), 'rooms', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['rooms'],
-                            'capacity'  => intval( get_post_meta( get_the_ID(), 'capacity', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['capacity'],
-                            'bedrooms'  => intval( get_post_meta( get_the_ID(), 'bedrooms', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['bedrooms'],
-                            'price'     => floatval( get_post_meta( get_the_ID(), 'price', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['price'],
-                            'amenities' => get_post_meta( get_the_ID(), 'amenities', true ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['amenities'],
-                            'features'  => get_post_meta( get_the_ID(), 'features', true ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['features'],
-                            'featured'  => (bool) get_post_meta( get_the_ID(), 'featured', true ),
-                            // CRITICAL: Always force WordPress permalink, never external URLs
-                            'link'      => get_permalink( get_the_ID() ),
+                            'location'  => $location ?: '',
+                            'rating'    => floatval( get_post_meta( $post_id, 'rating', true ) ) ?: 0,
+                            'stars'     => floatval( get_post_meta( $post_id, 'stars', true ) ) ?: 0,
+                            'rooms'     => intval( get_post_meta( $post_id, 'rooms', true ) ) ?: 0,
+                            'capacity'  => intval( get_post_meta( $post_id, 'capacity', true ) ) ?: 0,
+                            'featured'  => (bool) get_post_meta( $post_id, 'featured', true ),
+                            'link'      => get_permalink( $post_id ),
                         );
 
                         $current_page_hotels[] = $hotel_data;
-                        $demo_index++;
                     }
                     wp_reset_postdata();
                 } else {
                     // Fallback: When no hotels match the filters, get some real hotels without filters
-                    // This ensures we always show actual WordPress hotels with proper permalinks
                     $fallback_query = new WP_Query( array(
                         'post_type'      => 'hotel',
                         'posts_per_page' => $per_page,
                         'post_status'    => 'publish',
-                        'orderby'        => 'rand', // Random hotels
+                        'orderby'        => 'rand',
                         'order'          => 'DESC',
                     ) );
 
                     if ( $fallback_query->have_posts() ) {
-                        // Use actual WordPress hotels
-                        $demo_index = 0;
                         while ( $fallback_query->have_posts() ) {
                             $fallback_query->the_post();
+                            $post_id = get_the_ID();
 
-                            $image_url = get_the_post_thumbnail_url( get_the_ID(), 'seminargo-thumbnail' );
+                            $image_url = get_the_post_thumbnail_url( $post_id, 'seminargo-thumbnail' );
                             if ( !$image_url ) {
-                                $image_url = $demo_hotels[ $demo_index % count( $demo_hotels ) ]['image'];
+                                $medias = json_decode( get_post_meta( $post_id, 'medias_json', true ), true );
+                                if ( !empty( $medias[0]['previewUrl'] ) ) {
+                                    $image_url = $medias[0]['previewUrl'];
+                                } else {
+                                    $image_url = 'https://placehold.co/400x300/e2e8f0/64748b?text=Hotel';
+                                }
+                            }
+
+                            // Build location - prioritize city, then address (not country code)
+                            $city = get_post_meta( $post_id, 'business_city', true );
+                            $address = get_post_meta( $post_id, 'business_address_1', true );
+                            if ( !empty( $city ) ) {
+                                $location = $city;
+                            } elseif ( !empty( $address ) ) {
+                                $location = $address;
+                            } else {
+                                $location = '';
                             }
 
                             $hotel_data = array(
-                                'id'        => get_the_ID(),
+                                'id'        => $post_id,
                                 'image'     => $image_url,
                                 'title'     => get_the_title(),
-                                'location'  => get_post_meta( get_the_ID(), 'location', true ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['location'],
-                                'rating'    => floatval( get_post_meta( get_the_ID(), 'rating', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['rating'],
-                                'reviews'   => intval( get_post_meta( get_the_ID(), 'reviews', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['reviews'],
-                                'stars'     => intval( get_post_meta( get_the_ID(), 'stars', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['stars'],
-                                'rooms'     => intval( get_post_meta( get_the_ID(), 'rooms', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['rooms'],
-                                'capacity'  => intval( get_post_meta( get_the_ID(), 'capacity', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['capacity'],
-                                'bedrooms'  => intval( get_post_meta( get_the_ID(), 'bedrooms', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['bedrooms'],
-                                'price'     => floatval( get_post_meta( get_the_ID(), 'price', true ) ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['price'],
-                                'amenities' => get_post_meta( get_the_ID(), 'amenities', true ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['amenities'],
-                                'features'  => get_post_meta( get_the_ID(), 'features', true ) ?: $demo_hotels[ $demo_index % count( $demo_hotels ) ]['features'],
-                                'featured'  => (bool) get_post_meta( get_the_ID(), 'featured', true ),
-                                // ALWAYS use get_permalink for proper slug
-                                'link'      => get_permalink( get_the_ID() ),
+                                'location'  => $location ?: '',
+                                'rating'    => floatval( get_post_meta( $post_id, 'rating', true ) ) ?: 0,
+                                'stars'     => floatval( get_post_meta( $post_id, 'stars', true ) ) ?: 0,
+                                'rooms'     => intval( get_post_meta( $post_id, 'rooms', true ) ) ?: 0,
+                                'capacity'  => intval( get_post_meta( $post_id, 'capacity', true ) ) ?: 0,
+                                'featured'  => (bool) get_post_meta( $post_id, 'featured', true ),
+                                'link'      => get_permalink( $post_id ),
                             );
 
                             $current_page_hotels[] = $hotel_data;
-                            $demo_index++;
                         }
                         wp_reset_postdata();
                         $total_hotels = $fallback_query->found_posts;
                     } else {
-                        // Absolute last resort: no hotels exist at all, show empty state
+                        // No hotels exist at all, show empty state
                         $current_page_hotels = array();
                         $total_hotels = 0;
                     }
@@ -508,11 +297,6 @@ get_header();
                             </svg>
                         </button>
                     </div>
-                </div>
-
-                <!-- Active Filters Tags -->
-                <div class="active-filters" id="active-filters">
-                    <!-- Populated by JavaScript -->
                 </div>
 
                 <!-- Hotels Grid -->
