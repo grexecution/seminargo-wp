@@ -21,37 +21,8 @@ get_header(); ?>
 
                     <!-- Seminargo Search Widget -->
                     <div class="search-widget-wrapper">
-                        <div class="widget-skeleton" id="widget-skeleton">
-                            <div class="skeleton-field"></div>
-                            <div class="skeleton-field"></div>
-                            <div class="skeleton-field skeleton-field-small"></div>
-                            <div class="skeleton-button"></div>
-                        </div>
-                        <div id="seminargo-widget" data-platform-url="https://finder.dev.seminargo.eu/" style="opacity: 0; transition: opacity 0.3s ease;"></div>
-                        <script>
-                            (function() {
-                                var script = document.createElement('script');
-                                script.src = 'https://platform-widget.dev.seminargo.eu/widget.js';
-                                script.onload = function() {
-                                    var checkWidget = setInterval(function() {
-                                        var widget = document.getElementById('seminargo-widget');
-                                        if (widget && widget.children.length > 0) {
-                                            // Widget loaded - fade it in and hide skeleton
-                                            widget.style.opacity = '1';
-                                            var skeleton = document.getElementById('widget-skeleton');
-                                            if (skeleton) {
-                                                skeleton.style.opacity = '0';
-                                                setTimeout(function() {
-                                                    skeleton.style.display = 'none';
-                                                }, 300);
-                                            }
-                                            clearInterval(checkWidget);
-                                        }
-                                    }, 50);
-                                };
-                                document.head.appendChild(script);
-                            })();
-                        </script>
+                        <div id="seminargo-widget" data-platform-url="https://finder.dev.seminargo.eu/"></div>
+                        <script src="https://platform-widget.dev.seminargo.eu/widget.js"></script>
                     </div>
                 </div>
             </div>
