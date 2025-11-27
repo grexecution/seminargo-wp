@@ -94,7 +94,7 @@
                             AT-1160 Wien, Liebhartsgasse 16 | Tel: +43 1 90 858
                         </p>
                         <p class="footer-copy">
-                            &copy; 2025 seminargo.com | Alle Rechte vorbehalten (Version 3.4.7)
+                            &copy; 2025 seminargo.com | Alle Rechte vorbehalten (Version 1.1.0)
                         </p>
                         <p class="footer-legal">
                             <a href="<?php echo esc_url( home_url( '/agb' ) ); ?>"><?php esc_html_e( 'AGBs', 'seminargo' ); ?></a>

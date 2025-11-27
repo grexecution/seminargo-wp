@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Define theme constants
  */
-define( 'SEMINARGO_VERSION', '1.0.0' );
+define( 'SEMINARGO_VERSION', '1.1.0' );
 define( 'SEMINARGO_THEME_PATH', get_template_directory() );
 define( 'SEMINARGO_THEME_URL', get_template_directory_uri() );
 define( 'SEMINARGO_ASSETS_PATH', SEMINARGO_THEME_PATH . '/assets/' );
@@ -302,6 +302,11 @@ if ( file_exists( SEMINARGO_INC_PATH . 'custom-post-types.php' ) ) {
 // AJAX handlers
 if ( file_exists( SEMINARGO_INC_PATH . 'ajax-handlers.php' ) ) {
     require SEMINARGO_INC_PATH . 'ajax-handlers.php';
+}
+
+// Hotel importer (API sync)
+if ( file_exists( SEMINARGO_INC_PATH . 'hotel-importer.php' ) ) {
+    require SEMINARGO_INC_PATH . 'hotel-importer.php';
 }
 
 /**

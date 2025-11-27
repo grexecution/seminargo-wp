@@ -749,6 +749,21 @@ body.slide-menu-open {
 /* Widget Wrapper */
 .search-widget-wrapper {
     min-height: 80px;
+    position: relative;
+    z-index: 100;
+}
+
+/* Ensure widget elements are fully clickable */
+#seminargo-widget,
+#seminargo-widget * {
+    pointer-events: auto !important;
+}
+
+#seminargo-widget a,
+#seminargo-widget button,
+#seminargo-widget [type="submit"] {
+    cursor: pointer !important;
+    pointer-events: auto !important;
 }
 
 /* Hero Image Section */
