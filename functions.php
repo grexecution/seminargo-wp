@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Define theme constants
  */
-define( 'SEMINARGO_VERSION', '1.1.0' );
+define( 'SEMINARGO_VERSION', '1.2.0' );
 define( 'SEMINARGO_THEME_PATH', get_template_directory() );
 define( 'SEMINARGO_THEME_URL', get_template_directory_uri() );
 define( 'SEMINARGO_ASSETS_PATH', SEMINARGO_THEME_PATH . '/assets/' );
