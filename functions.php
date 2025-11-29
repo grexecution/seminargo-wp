@@ -309,6 +309,16 @@ if ( file_exists( SEMINARGO_INC_PATH . 'hotel-importer.php' ) ) {
     require SEMINARGO_INC_PATH . 'hotel-importer.php';
 }
 
+// Collection post type (SEO landing pages)
+if ( file_exists( SEMINARGO_INC_PATH . 'post-type-collection.php' ) ) {
+    require SEMINARGO_INC_PATH . 'post-type-collection.php';
+}
+
+// Contact form settings
+if ( file_exists( SEMINARGO_INC_PATH . 'contact-settings.php' ) ) {
+    require SEMINARGO_INC_PATH . 'contact-settings.php';
+}
+
 /**
  * Compatibility functions for Elementor
  */

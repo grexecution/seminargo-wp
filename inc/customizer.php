@@ -38,7 +38,7 @@ function seminargo_customize_register( $wp_customize ) {
 
     // Primary Color
     $wp_customize->add_setting( 'seminargo_primary_color', array(
-        'default'           => '#2563eb',
+        'default'           => '#AC2A6E',
         'sanitize_callback' => 'sanitize_hex_color',
         'transport'         => 'postMessage',
     ) );
@@ -356,7 +356,7 @@ function seminargo_customizer_css() {
     ?>
     <style type="text/css">
         :root {
-            --color-primary: <?php echo esc_attr( get_theme_mod( 'seminargo_primary_color', '#2563eb' ) ); ?>;
+            --color-primary: <?php echo esc_attr( get_theme_mod( 'seminargo_primary_color', '#AC2A6E' ) ); ?>;
             --color-secondary: <?php echo esc_attr( get_theme_mod( 'seminargo_secondary_color', '#10b981' ) ); ?>;
             --color-accent: <?php echo esc_attr( get_theme_mod( 'seminargo_accent_color', '#f59e0b' ) ); ?>;
             --container-width: <?php echo esc_attr( get_theme_mod( 'seminargo_container_width', '1200' ) ); ?>px;

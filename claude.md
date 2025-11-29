@@ -258,11 +258,11 @@ All spacing follows an 8-pixel grid system for consistency and harmony.
 
 ## 🎨 Color System
 
-### Primary Palette
+### Primary Palette (Seminargo Berry)
 ```css
---color-primary:        #2563eb;  /* Blue 600 */
---color-primary-light:  #3b82f6;  /* Blue 500 */
---color-primary-dark:   #1e40af;  /* Blue 800 */
+--color-primary:        #AC2A6E;  /* Seminargo Berry */
+--color-primary-light:  #D93A8A;  /* Berry Light */
+--color-primary-dark:   #8A1F56;  /* Berry Dark */
 
 --color-secondary:      #10b981;  /* Emerald 500 */
 --color-secondary-light:#34d399;  /* Emerald 400 */
