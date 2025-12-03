@@ -1032,114 +1032,145 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
-     * Fetch hotels from API
+     * Fetch hotels from API with pagination
      */
     private function fetch_hotels_from_api() {
-        $query = '{
-            hotelList {
-                id
-                slug
-                refCode
-                name
-                businessName
-                businessAddress1
-                businessAddress2
-                businessAddress3
-                businessAddress4
-                businessEmail
-                businessZip
-                businessCity
-                businessCountry
-                locationLongitude
-                locationLatitude
-                distanceToNearestAirport
-                distanceToNearestRailroadStation
-                rating
-                maxCapacityRooms
-                maxCapacityPeople
-                hasActivePartnerContract
-                texts {
+        $all_hotels = [];
+        $batch_size = 200; // Fetch 200 hotels per batch (balanced between performance and reliability)
+        $skip = 0;
+        $has_more = true;
+
+        $this->log( 'info', '📥 Starting batched hotel fetch (batch size: ' . $batch_size . ')' );
+
+        while ( $has_more ) {
+            $this->log( 'info', '📦 Fetching batch: skip=' . $skip . ', limit=' . $batch_size );
+
+            $query = '{
+                hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
                     id
-                    details
-                    type
-                    language
-                }
-                attributes {
-                    id
-                    attribute
-                }
-                medias {
-                    id
+                    slug
+                    refCode
                     name
-                    mimeType
-                    width
-                    height
-                    format
-                    path
-                    url
-                    previewUrl
-                }
-                integrations {
-                    directBooking
-                }
-                spaceId
-                space {
-                    name
-                }
-                meetingRooms {
-                    id
-                    name
-                    area
-                    capacityUForm
-                    capacityTheater
-                    capacityParlament
-                    capacityCircle
-                    capacityBankett
-                    capacityCocktail
-                    capacityBlock
-                    facilityId
-                    facility {
+                    businessName
+                    businessAddress1
+                    businessAddress2
+                    businessAddress3
+                    businessAddress4
+                    businessEmail
+                    businessZip
+                    businessCity
+                    businessCountry
+                    locationLongitude
+                    locationLatitude
+                    distanceToNearestAirport
+                    distanceToNearestRailroadStation
+                    rating
+                    maxCapacityRooms
+                    maxCapacityPeople
+                    hasActivePartnerContract
+                    texts {
                         id
-                        sku
-                        name
-                        header
                         details
+                        type
+                        language
+                    }
+                    attributes {
+                        id
+                        attribute
+                    }
+                    medias {
+                        id
+                        name
+                        mimeType
+                        width
+                        height
+                        format
+                        path
+                        url
+                        previewUrl
+                    }
+                    integrations {
+                        directBooking
+                    }
+                    spaceId
+                    space {
+                        name
+                    }
+                    meetingRooms {
+                        id
+                        name
+                        area
+                        capacityUForm
+                        capacityTheater
+                        capacityParlament
+                        capacityCircle
+                        capacityBankett
+                        capacityCocktail
+                        capacityBlock
+                        facilityId
+                        facility {
+                            id
+                            sku
+                            name
+                            header
+                            details
+                        }
+                    }
+                    cancellationRules {
+                        id
+                        sequence
+                        daysToEvent
+                        minCapacity
+                        maxCapacity
+                        minOvernight
+                        maxOvernight
+                        minTotalGuests
+                        maxTotalGuests
+                        toleranceRate
+                        rate
                     }
                 }
-                cancellationRules {
-                    id
-                    sequence
-                    daysToEvent
-                    minCapacity
-                    maxCapacity
-                    minOvernight
-                    maxOvernight
-                    minTotalGuests
-                    maxTotalGuests
-                    toleranceRate
-                    rate
+            }';
+
+            $response = wp_remote_post( $this->api_url, [
+                'body'    => json_encode( [ 'query' => $query ] ),
+                'headers' => [ 'Content-Type' => 'application/json' ],
+                'timeout' => 120, // Increased timeout for larger batches
+            ] );
+
+            if ( is_wp_error( $response ) ) {
+                throw new Exception( 'API Error: ' . $response->get_error_message() );
+            }
+
+            $body = wp_remote_retrieve_body( $response );
+            $data = json_decode( $body );
+
+            if ( isset( $data->errors ) ) {
+                throw new Exception( 'GraphQL Error: ' . json_encode( $data->errors ) );
+            }
+
+            $batch_hotels = $data->data->hotelList ?? [];
+            $batch_count = count( $batch_hotels );
+
+            $this->log( 'info', '✅ Fetched ' . $batch_count . ' hotels in this batch' );
+
+            if ( $batch_count === 0 ) {
+                // No more hotels to fetch
+                $has_more = false;
+            } else {
+                // Add to collection
+                $all_hotels = array_merge( $all_hotels, $batch_hotels );
+                $skip += $batch_size;
+
+                // If we got fewer hotels than the batch size, we're done
+                if ( $batch_count < $batch_size ) {
+                    $has_more = false;
                 }
             }
-        }';
-
-        $response = wp_remote_post( $this->api_url, [
-            'body'    => json_encode( [ 'query' => $query ] ),
-            'headers' => [ 'Content-Type' => 'application/json' ],
-            'timeout' => 60,
-        ] );
-
-        if ( is_wp_error( $response ) ) {
-            throw new Exception( 'API Error: ' . $response->get_error_message() );
         }
 
-        $body = wp_remote_retrieve_body( $response );
-        $data = json_decode( $body );
-
-        if ( isset( $data->errors ) ) {
-            throw new Exception( 'GraphQL Error: ' . json_encode( $data->errors ) );
-        }
-
-        return $data->data->hotelList ?? [];
+        $this->log( 'info', '✅ Total hotels fetched: ' . count( $all_hotels ) );
+        return $all_hotels;
     }
 
     /**

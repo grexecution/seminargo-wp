@@ -1,55 +1,56 @@
 <?php
 /**
- * The template for displaying archive pages
+ * Template Name: Blog
+ * Template for displaying blog posts archive
  *
  * @package Seminargo
  */
 
-get_header(); ?>
+get_header();
+
+// Get paged value for pagination
+$paged = ( get_query_var( 'paged' ) ) ? get_query_var( 'paged' ) : 1;
+
+// Query blog posts
+$blog_query = new WP_Query( array(
+    'post_type'      => 'post',
+    'post_status'    => 'publish',
+    'posts_per_page' => 9,
+    'paged'          => $paged,
+) );
+
+?>
 
 <div id="primary" class="content-area blog-archive">
     <main id="main" class="site-main">
 
-        <?php if ( have_posts() ) : ?>
-
-            <!-- Archive Header -->
-            <section class="archive-hero">
-                <div class="container">
-                    <div class="archive-header">
-                        <?php
-                        // Get archive title without prefix
-                        if ( is_category() ) {
-                            $title = single_cat_title( '', false );
-                            $tagline = __( 'Kategorie', 'seminargo' );
-                        } elseif ( is_tag() ) {
-                            $title = single_tag_title( '', false );
-                            $tagline = __( 'Schlagwort', 'seminargo' );
-                        } elseif ( is_author() ) {
-                            $title = get_the_author();
-                            $tagline = __( 'Autor', 'seminargo' );
-                        } elseif ( is_date() ) {
-                            $title = get_the_date( 'F Y' );
-                            $tagline = __( 'Archiv', 'seminargo' );
-                        } else {
-                            $title = __( 'Blog', 'seminargo' );
-                            $tagline = __( 'Alle Beiträge', 'seminargo' );
-                        }
-                        ?>
-                        <span class="archive-tagline"><?php echo esc_html( $tagline ); ?></span>
-                        <h1 class="archive-title"><?php echo esc_html( $title ); ?></h1>
-                        <?php if ( term_description() ) : ?>
-                            <div class="archive-description"><?php echo wp_kses_post( term_description() ); ?></div>
-                        <?php endif; ?>
-                    </div>
+        <!-- Archive Hero -->
+        <section class="archive-hero">
+            <div class="container">
+                <div class="archive-header">
+                    <span class="archive-tagline"><?php esc_html_e( 'Aktuelles & Ratgeber', 'seminargo' ); ?></span>
+                    <h1 class="archive-title"><?php echo esc_html( get_the_title() ); ?></h1>
+                    <?php if ( get_the_content() ) : ?>
+                        <div class="archive-description">
+                            <?php the_content(); ?>
+                        </div>
+                    <?php else : ?>
+                        <div class="archive-description">
+                            <?php esc_html_e( 'Entdecken Sie hilfreiche Tipps, Trends und Neuigkeiten rund um Seminarhotels, Veranstaltungsplanung und erfolgreiche Events.', 'seminargo' ); ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
-            </section>
+            </div>
+        </section>
+
+        <?php if ( $blog_query->have_posts() ) : ?>
 
             <!-- Posts Grid -->
             <section class="posts-section">
                 <div class="container">
                     <div class="posts-grid">
                         <?php
-                        while ( have_posts() ) : the_post();
+                        while ( $blog_query->have_posts() ) : $blog_query->the_post();
                             // Get post data
                             $post_data = array(
                                 'id'           => get_the_ID(),
@@ -112,11 +113,14 @@ get_header(); ?>
 
                     <!-- Pagination -->
                     <?php
-                    the_posts_pagination( array(
+                    echo paginate_links( array(
+                        'total'              => $blog_query->max_num_pages,
+                        'current'            => $paged,
                         'mid_size'           => 2,
                         'prev_text'          => '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg> ' . __( 'Zurück', 'seminargo' ),
                         'next_text'          => __( 'Weiter', 'seminargo' ) . ' <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>',
                         'before_page_number' => '<span class="screen-reader-text">' . __( 'Seite', 'seminargo' ) . ' </span>',
+                        'type'               => 'list',
                         'class'              => 'blog-pagination',
                     ) );
                     ?>
@@ -128,8 +132,8 @@ get_header(); ?>
             <section class="no-results">
                 <div class="container">
                     <div class="no-results-content">
-                        <h1><?php esc_html_e( 'Keine Beiträge gefunden', 'seminargo' ); ?></h1>
-                        <p><?php esc_html_e( 'Es wurden keine Beiträge gefunden. Bitte versuchen Sie eine andere Suche.', 'seminargo' ); ?></p>
+                        <h1><?php esc_html_e( 'Noch keine Beiträge', 'seminargo' ); ?></h1>
+                        <p><?php esc_html_e( 'Es sind noch keine Blog-Beiträge vorhanden. Schauen Sie bald wieder vorbei!', 'seminargo' ); ?></p>
                         <a href="<?php echo esc_url( home_url( '/' ) ); ?>" class="button button-primary">
                             <?php esc_html_e( 'Zur Startseite', 'seminargo' ); ?>
                         </a>
@@ -138,6 +142,7 @@ get_header(); ?>
             </section>
 
         <?php endif; ?>
+        <?php wp_reset_postdata(); ?>
 
     </main><!-- #main -->
 </div><!-- #primary -->
