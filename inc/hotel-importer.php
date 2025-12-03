@@ -712,7 +712,8 @@ class Seminargo_Hotel_Importer {
         $fields = [
             'hotel_id'                    => __( 'API Hotel ID', 'seminargo' ),
             'ref_code'                    => __( 'Reference Code', 'seminargo' ),
-            'slug'                        => __( 'Shop URL', 'seminargo' ),
+            'api_slug'                    => __( 'API Slug', 'seminargo' ),
+            'shop_url'                    => __( 'Shop URL', 'seminargo' ),
             'space_id'                    => __( 'Space ID', 'seminargo' ),
             'space_name'                  => __( 'Space Name', 'seminargo' ),
             'has_active_partner_contract' => __( 'Partner Contract', 'seminargo' ),
@@ -734,9 +735,9 @@ class Seminargo_Hotel_Importer {
         echo '</table>';
 
         // Link to shop
-        $slug = get_post_meta( $post->ID, 'slug', true );
-        if ( $slug ) {
-            echo '<p style="margin-top: 10px;"><a href="' . esc_url( $slug ) . '" target="_blank" class="button button-small">🔗 ' . esc_html__( 'View in Shop', 'seminargo' ) . '</a></p>';
+        $shop_url = get_post_meta( $post->ID, 'shop_url', true );
+        if ( $shop_url ) {
+            echo '<p style="margin-top: 10px;"><a href="' . esc_url( $shop_url ) . '" target="_blank" class="button button-small">🔗 ' . esc_html__( 'View in Shop', 'seminargo' ) . '</a></p>';
         }
     }
 
@@ -1310,10 +1311,14 @@ class Seminargo_Hotel_Importer {
         // Use 'name' for display, fallback to 'businessName' if name is empty
         $hotel_title = ! empty( $hotel->name ) ? $hotel->name : $hotel->businessName;
 
+        // Use API slug as WordPress post slug (sanitized)
+        $wp_slug = ! empty( $hotel->slug ) ? sanitize_title( $hotel->slug ) : sanitize_title( $hotel_title );
+
         if ( $is_new ) {
             // Create new hotel
             $post_data = [
                 'post_title'   => $hotel_title,
+                'post_name'    => $wp_slug,
                 'post_content' => $content,
                 'post_status'  => 'publish',
                 'post_type'    => 'hotel',
@@ -1347,6 +1352,12 @@ class Seminargo_Hotel_Importer {
                 $has_changes = true;
             }
 
+            // Check and update slug
+            if ( $post->post_name !== $wp_slug ) {
+                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'slug', $post->post_name, $wp_slug );
+                $has_changes = true;
+            }
+
             // Check and update content
             if ( $post->post_content !== $content ) {
                 $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'content', substr( $post->post_content, 0, 50 ) . '...', substr( $content, 0, 50 ) . '...' );
@@ -1358,6 +1369,7 @@ class Seminargo_Hotel_Importer {
                 wp_update_post( [
                     'ID'           => $post_id,
                     'post_title'   => $hotel_title,
+                    'post_name'    => $wp_slug,
                     'post_content' => $content,
                     'post_status'  => 'publish',
                 ] );
@@ -1393,8 +1405,9 @@ class Seminargo_Hotel_Importer {
         $meta_fields = [
             // Basic info
             'hotel_id'      => $hotel->id,
-            'slug'          => $this->shop_url . $hotel->slug,
-            'ref_code'      => $hotel->refCode,
+            'api_slug'      => $hotel->slug ?? '',
+            'shop_url'      => $this->shop_url . ( $hotel->slug ?? '' ),
+            'ref_code'      => $hotel->refCode ?? '',
             'hotel_name'    => $hotel->name ?? '',
             'business_name' => $hotel->businessName ?? '',
 

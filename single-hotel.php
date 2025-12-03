@@ -17,7 +17,8 @@ while ( have_posts() ) : the_post();
         // Basic info
         'hotel_id'      => get_post_meta( $post_id, 'hotel_id', true ),
         'ref_code'      => get_post_meta( $post_id, 'ref_code', true ),
-        'slug'          => get_post_meta( $post_id, 'slug', true ),
+        'api_slug'      => get_post_meta( $post_id, 'api_slug', true ),
+        'shop_url'      => get_post_meta( $post_id, 'shop_url', true ),
 
         // Location
         'address'       => get_post_meta( $post_id, 'business_address_1', true ),
@@ -738,7 +739,19 @@ while ( have_posts() ) : the_post();
                             </div>
 
                             <!-- Info Card -->
-                            <?php if ( !empty( $hotel_data['slug'] ) ) : ?>
+                            <?php
+                            // Build Finder URL with hotel parameter
+                            $finder_url = 'https://finder.dev.seminargo.eu/';
+                            if ( !empty( $hotel_data['api_slug'] ) ) {
+                                // Use slug parameter (preferred by client)
+                                $finder_url .= '?addHotelBySlug=' . urlencode( $hotel_data['api_slug'] );
+                            } elseif ( !empty( $hotel_data['ref_code'] ) ) {
+                                // Fallback to refCode if slug not available
+                                $finder_url .= '?addHotelByRefCode=' . urlencode( $hotel_data['ref_code'] );
+                            }
+
+                            if ( !empty( $hotel_data['api_slug'] ) || !empty( $hotel_data['ref_code'] ) ) :
+                            ?>
                             <div class="booking-card sticky" id="booking-form-section">
                                 <div class="booking-card-header">
                                     <div class="booking-icon">
@@ -758,7 +771,7 @@ while ( have_posts() ) : the_post();
                                     <div class="info-card-content">
                                         <p class="info-card-text"><?php esc_html_e( 'Erhalten Sie weitere Informationen zu diesem Hotel, aktuelle Preise und prüfen Sie die Verfügbarkeit für Ihren Wunschtermin.', 'seminargo' ); ?></p>
 
-                                        <a href="<?php echo esc_url( $hotel_data['slug'] ); ?>" target="_blank" rel="noopener" class="btn-booking btn-info-link">
+                                        <a href="<?php echo esc_url( $finder_url ); ?>" target="_blank" rel="noopener" class="btn-booking btn-info-link">
                                             <?php esc_html_e( 'Mehr erfahren', 'seminargo' ); ?>
                                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
