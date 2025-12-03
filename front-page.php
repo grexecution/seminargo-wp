@@ -24,45 +24,6 @@ get_header(); ?>
                         <div id="seminargo-widget"
                              data-platform-url="https://finder.dev.seminargo.eu/"></div>
                         <script src="https://platform-widget.dev.seminargo.eu/widget.js"></script>
-                        <script>
-                        // Fix: Force Suchen button to redirect (needed for local dev where API calls fail)
-                        (function() {
-                            var platformUrl = 'https://finder.dev.seminargo.eu/';
-                            var attempts = 0;
-
-                            function attachHandler() {
-                                if (++attempts > 50) return;
-
-                                var widget = document.getElementById('seminargo-widget');
-                                if (!widget || !widget.shadowRoot) {
-                                    setTimeout(attachHandler, 200);
-                                    return;
-                                }
-
-                                var suchenBtn = null;
-                                widget.shadowRoot.querySelectorAll('button').forEach(function(btn) {
-                                    if (btn.textContent.trim() === 'Suchen') suchenBtn = btn;
-                                });
-
-                                if (!suchenBtn) {
-                                    setTimeout(attachHandler, 200);
-                                    return;
-                                }
-
-                                // Clone to remove widget's broken handlers, attach our redirect
-                                var newBtn = suchenBtn.cloneNode(true);
-                                suchenBtn.parentNode.replaceChild(newBtn, suchenBtn);
-
-                                newBtn.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    window.location.href = platformUrl;
-                                }, true);
-                            }
-
-                            attachHandler();
-                        })();
-                        </script>
                     </div>
                 </div>
             </div>
