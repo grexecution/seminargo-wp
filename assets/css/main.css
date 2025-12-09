@@ -4940,7 +4940,11 @@ a.btn-info-link svg {
 .hotel-cta {
     background: linear-gradient(135deg, #AC2A6E 0%, #8d2258 100%);
     padding: var(--spacing-5xl) 0;
-    margin-top: var(--spacing-5xl);
+}
+
+/* Remove margin-top on single hotel pages (logos section provides spacing) */
+.hotel-single .hotel-cta {
+    margin-top: 0;
 }
 
 .cta-content {

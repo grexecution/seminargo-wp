@@ -958,6 +958,43 @@ while ( have_posts() ) : the_post();
         </section>
         <?php endif; ?>
 
+        <!-- Client Logos Section -->
+        <section class="logo-slider-section">
+            <div class="container">
+                <div class="logo-slider-wrapper">
+                    <div class="logo-slider">
+                        <?php
+                        // Real client logos - Vector SVG format
+                        $client_logos = array(
+                            array('name' => 'REWE', 'image' => 'rewe.svg'),
+                            array('name' => 'dm', 'image' => 'dm.svg'),
+                            array('name' => 'Allianz', 'image' => 'allianz.svg'),
+                            array('name' => 'Austrian Airlines', 'image' => 'austrian.svg'),
+                            array('name' => 'Henkel', 'image' => 'henkel.svg'),
+                            array('name' => 'DB Schenker', 'image' => 'dbschenker.svg'),
+                            array('name' => 'STRABAG', 'image' => 'strabag.svg'),
+                            array('name' => 'Mondi', 'image' => 'mondi.svg'),
+                            array('name' => 'Agrana', 'image' => 'agrana.svg'),
+                            array('name' => 'Doka', 'image' => 'doka.svg'),
+                        );
+
+                        // Display logos twice for seamless scrolling
+                        for ($i = 0; $i < 2; $i++) :
+                            foreach ($client_logos as $logo) :
+                                $logo_path = get_template_directory_uri() . '/assets/images/client-vector/dark/' . $logo['image'];
+                                ?>
+                                <div class="logo-slide">
+                                    <div class="logo-item" title="<?php echo esc_attr($logo['name']); ?>">
+                                        <img src="<?php echo esc_url($logo_path); ?>" alt="<?php echo esc_attr($logo['name']); ?>" loading="lazy">
+                                    </div>
+                                </div>
+                            <?php endforeach;
+                        endfor; ?>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Call to Action Section -->
         <section class="hotel-cta">
             <div class="container">

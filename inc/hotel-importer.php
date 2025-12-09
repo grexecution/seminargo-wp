@@ -1691,6 +1691,9 @@ class Seminargo_Hotel_Importer {
                 $image_name = basename( $media->url ?? $media->path );
                 $image_name = sanitize_file_name( $image_name );
 
+                // Normalize file extension to lowercase (fix for .JPG vs .jpg)
+                $image_name = strtolower( $image_name );
+
                 // Check if image already exists
                 $existing = get_posts( [
                     'post_type'      => 'attachment',
@@ -1718,6 +1721,12 @@ class Seminargo_Hotel_Importer {
                         'name'     => $image_name,
                         'tmp_name' => $tmp,
                     ];
+
+                    // Set MIME type explicitly to help WordPress recognize the file
+                    $file_type = wp_check_filetype( $image_name );
+                    if ( $file_type['type'] ) {
+                        $file_array['type'] = $file_type['type'];
+                    }
 
                     $attachment_id = media_handle_sideload( $file_array, $post_id );
 

@@ -387,3 +387,19 @@ function seminargo_excerpt_more( $more ) {
     return '...';
 }
 add_filter( 'excerpt_more', 'seminargo_excerpt_more' );
+
+/**
+ * Allow additional MIME types for hotel images
+ * Fixes issues with uppercase extensions (.JPG vs .jpg)
+ */
+function seminargo_upload_mimes( $mimes ) {
+    // Ensure all common image formats are allowed
+    $mimes['jpg|jpeg|jpe'] = 'image/jpeg';
+    $mimes['gif'] = 'image/gif';
+    $mimes['png'] = 'image/png';
+    $mimes['webp'] = 'image/webp';
+    $mimes['svg'] = 'image/svg+xml';
+
+    return $mimes;
+}
+add_filter( 'upload_mimes', 'seminargo_upload_mimes' );
