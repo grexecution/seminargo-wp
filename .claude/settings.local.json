@@ -22,7 +22,8 @@
       "Bash(ls:*)",
       "Bash(grep:*)",
       "Bash(done)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(/Users/gregorwallner/.local/bin/wp post meta get:*)"
     ],
     "deny": [],
     "ask": []

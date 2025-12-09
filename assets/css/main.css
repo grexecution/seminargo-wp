@@ -3814,26 +3814,29 @@ body.single-hotel {
 
 /* Key Features Grid - Box */
 .hotel-key-features {
-    background: white;
-    border-radius: 16px;
-    padding: var(--spacing-lg);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .key-features-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--spacing-sm);
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-lg);
 }
 
 .key-feature-item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
-    padding: 0;
-    background: transparent;
-    border-radius: 0;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: white;
+    border-radius: 12px;
     border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+}
+
+.key-feature-item:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
 }
 
 .key-feature-item svg {
@@ -5053,7 +5056,6 @@ a.btn-info-link svg {
         grid-template-columns: 1fr;
     }
 
-    .hotel-key-features,
     .hotel-description,
     .hotel-amenities-features,
     .hotel-faqs,
@@ -5061,6 +5063,10 @@ a.btn-info-link svg {
     .hotel-contact-card,
     .hotel-quick-info {
         padding: var(--spacing-md);
+    }
+
+    .key-feature-item {
+        padding: var(--spacing-sm) var(--spacing-md);
     }
 
     .cta-content {
@@ -6675,7 +6681,6 @@ body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
 
     .key-features-grid {
         grid-template-columns: 1fr;
-        gap: 0.75rem;
     }
 
     /* Similar hotels section */

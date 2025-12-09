@@ -39,6 +39,7 @@ while ( have_posts() ) : the_post();
         // Capacity
         'rooms'         => intval( get_post_meta( $post_id, 'rooms', true ) ),
         'capacity'      => intval( get_post_meta( $post_id, 'capacity', true ) ),
+        'hotel_rooms'   => intval( get_post_meta( $post_id, 'max_capacity_rooms', true ) ),
 
         // Texts
         'description'   => get_post_meta( $post_id, 'description', true ) ?: get_the_content(),
@@ -308,32 +309,17 @@ while ( have_posts() ) : the_post();
                                     </div>
                                     <?php endif; ?>
 
-                                    <?php if ( $hotel_data['distance_airport'] ) : ?>
+                                    <?php if ( $hotel_data['hotel_rooms'] > 0 ) : ?>
                                     <div class="key-feature-item">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path>
+                                            <path d="M2 4v16"></path>
+                                            <path d="M2 8h18a2 2 0 0 1 2 2v10"></path>
+                                            <path d="M2 17h20"></path>
+                                            <path d="M6 8v9"></path>
                                         </svg>
                                         <div class="feature-content">
-                                            <span class="feature-value"><?php echo round( $hotel_data['distance_airport'], 1 ); ?> km</span>
-                                            <span class="feature-label"><?php esc_html_e( 'zum Flughafen', 'seminargo' ); ?></span>
-                                        </div>
-                                    </div>
-                                    <?php endif; ?>
-
-                                    <?php if ( $hotel_data['distance_train'] ) : ?>
-                                    <div class="key-feature-item">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <rect x="4" y="3" width="16" height="16" rx="2"></rect>
-                                            <path d="M4 11h16"></path>
-                                            <path d="M12 3v8"></path>
-                                            <circle cx="8" cy="15" r="1"></circle>
-                                            <circle cx="16" cy="15" r="1"></circle>
-                                            <path d="M8 19l-2 3"></path>
-                                            <path d="M16 19l2 3"></path>
-                                        </svg>
-                                        <div class="feature-content">
-                                            <span class="feature-value"><?php echo round( $hotel_data['distance_train'], 1 ); ?> km</span>
-                                            <span class="feature-label"><?php esc_html_e( 'zum Bahnhof', 'seminargo' ); ?></span>
+                                            <span class="feature-value"><?php echo esc_html( $hotel_data['hotel_rooms'] ); ?></span>
+                                            <span class="feature-label"><?php esc_html_e( 'Zimmer', 'seminargo' ); ?></span>
                                         </div>
                                     </div>
                                     <?php endif; ?>
