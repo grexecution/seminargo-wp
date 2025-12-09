@@ -1480,22 +1480,22 @@ class Seminargo_Hotel_Importer {
             'arrival_train'  => $texts['ARRIVAL_TRAIN'] ?? '',
 
             // All texts as JSON for reference
-            'texts_json' => json_encode( $hotel->texts ?? [] ),
+            'texts_json' => json_encode( $hotel->texts ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
 
             // Attributes (full JSON)
-            'attributes' => json_encode( $hotel->attributes ?? [] ),
+            'attributes' => json_encode( $hotel->attributes ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
 
             // Extracted attribute lists for easier filtering
-            'amenities_list' => json_encode( $this->extract_amenities( $hotel->attributes ?? [] ) ),
+            'amenities_list' => json_encode( $this->extract_amenities( $hotel->attributes ?? [] ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
 
             // Meeting rooms (full JSON with facility details)
-            'meeting_rooms' => json_encode( $hotel->meetingRooms ?? [] ),
+            'meeting_rooms' => json_encode( $hotel->meetingRooms ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
 
             // Cancellation rules
-            'cancellation_rules' => json_encode( $hotel->cancellationRules ?? [] ),
+            'cancellation_rules' => json_encode( $hotel->cancellationRules ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
 
             // Media metadata (full JSON)
-            'medias_json' => json_encode( $hotel->medias ?? [] ),
+            'medias_json' => json_encode( $hotel->medias ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
         ];
 
         // Calculate capacity from meeting rooms if API doesn't provide it

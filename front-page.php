@@ -98,24 +98,28 @@ get_header(); ?>
                 <div class="logo-slider-wrapper">
                     <div class="logo-slider">
                         <?php
-                        // Demo logos - in production these would be actual client logos
-                        $demo_logos = array(
-                            array('name' => 'Microsoft', 'svg' => '<svg viewBox="0 0 100 100"><rect x="10" y="10" width="35" height="35" fill="#f25022"/><rect x="55" y="10" width="35" height="35" fill="#7fba00"/><rect x="10" y="55" width="35" height="35" fill="#00a4ef"/><rect x="55" y="55" width="35" height="35" fill="#ffb900"/></svg>'),
-                            array('name' => 'Google', 'svg' => '<svg viewBox="0 0 100 50"><text x="50" y="35" text-anchor="middle" font-family="Arial" font-size="24" font-weight="500"><tspan fill="#4285f4">G</tspan><tspan fill="#ea4335">o</tspan><tspan fill="#fbbc04">o</tspan><tspan fill="#4285f4">g</tspan><tspan fill="#34a853">l</tspan><tspan fill="#ea4335">e</tspan></text></svg>'),
-                            array('name' => 'Amazon', 'svg' => '<svg viewBox="0 0 100 50"><text x="50" y="30" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold" fill="#232f3e">amazon</text><path d="M20 32 Q50 42 80 32" stroke="#ff9900" stroke-width="3" fill="none"/></svg>'),
-                            array('name' => 'Apple', 'svg' => '<svg viewBox="0 0 100 100"><path d="M50 20 C30 20, 20 35, 20 50 C20 70, 35 80, 50 80 C65 80, 80 70, 80 50 C80 35, 70 20, 50 20 M55 10 C55 5, 60 5, 60 10" fill="#555"/></svg>'),
-                            array('name' => 'IBM', 'svg' => '<svg viewBox="0 0 100 50"><text x="50" y="35" text-anchor="middle" font-family="Arial" font-size="28" font-weight="bold" fill="#006699">IBM</text></svg>'),
-                            array('name' => 'Oracle', 'svg' => '<svg viewBox="0 0 100 50"><text x="50" y="35" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold" fill="#f80000">ORACLE</text></svg>'),
-                            array('name' => 'SAP', 'svg' => '<svg viewBox="0 0 100 50"><rect x="10" y="15" width="80" height="25" rx="12" fill="#0088cc"/><text x="50" y="32" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="white">SAP</text></svg>'),
-                            array('name' => 'Salesforce', 'svg' => '<svg viewBox="0 0 100 50"><circle cx="50" cy="25" r="20" fill="#00a1e0"/><text x="50" y="32" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="white">SF</text></svg>'),
+                        // Real client logos - Vector SVG format
+                        $client_logos = array(
+                            array('name' => 'REWE', 'image' => 'rewe.svg'),
+                            array('name' => 'dm', 'image' => 'dm.svg'),
+                            array('name' => 'Allianz', 'image' => 'allianz.svg'),
+                            array('name' => 'Austrian Airlines', 'image' => 'austrian.svg'),
+                            array('name' => 'Henkel', 'image' => 'henkel.svg'),
+                            array('name' => 'DB Schenker', 'image' => 'dbschenker.svg'),
+                            array('name' => 'STRABAG', 'image' => 'strabag.svg'),
+                            array('name' => 'Mondi', 'image' => 'mondi.svg'),
+                            array('name' => 'Agrana', 'image' => 'agrana.svg'),
+                            array('name' => 'Doka', 'image' => 'doka.svg'),
                         );
 
                         // Display logos twice for seamless scrolling
                         for ($i = 0; $i < 2; $i++) :
-                            foreach ($demo_logos as $logo) : ?>
+                            foreach ($client_logos as $logo) :
+                                $logo_path = get_template_directory_uri() . '/assets/images/client-vector/dark/' . $logo['image'];
+                                ?>
                                 <div class="logo-slide">
                                     <div class="logo-item" title="<?php echo esc_attr($logo['name']); ?>">
-                                        <?php echo $logo['svg']; ?>
+                                        <img src="<?php echo esc_url($logo_path); ?>" alt="<?php echo esc_attr($logo['name']); ?>" loading="lazy">
                                     </div>
                                 </div>
                             <?php endforeach;
@@ -167,6 +171,7 @@ get_header(); ?>
                             $rooms = intval( get_post_meta( get_the_ID(), 'rooms', true ) );
                             $capacity = intval( get_post_meta( get_the_ID(), 'capacity', true ) );
                             $bedrooms = intval( get_post_meta( get_the_ID(), 'bedrooms', true ) );
+                            $stars = floatval( get_post_meta( get_the_ID(), 'stars', true ) );
 
                     ?>
                         <div class="hotel-card featured-hotel-card">
@@ -175,7 +180,12 @@ get_header(); ?>
                                     <img src="<?php echo esc_url( $hotel_image ); ?>" alt="<?php echo esc_attr( get_the_title() ); ?>" loading="lazy">
                                 </div>
                                 <div class="hotel-content">
-                                    <h3 class="hotel-title"><?php the_title(); ?></h3>
+                                    <h3 class="hotel-title">
+                                        <?php the_title(); ?>
+                                        <?php if ( $stars > 0 ) : ?>
+                                            <span class="hotel-stars-text"><?php echo esc_html( $stars ); ?>S</span>
+                                        <?php endif; ?>
+                                    </h3>
                                     <?php if ( $location ) : ?>
                                         <p class="hotel-location">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

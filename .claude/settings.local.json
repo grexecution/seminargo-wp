@@ -15,7 +15,14 @@
       "Bash(xargs:*)",
       "Bash(/Users/gregorwallner/.local/bin/wp post list:*)",
       "WebFetch(domain:platform-widget.dev.seminargo.eu)",
-      "WebFetch(domain:localhost)"
+      "WebFetch(domain:localhost)",
+      "Bash(mkdir:*)",
+      "WebSearch",
+      "WebFetch(domain:commons.wikimedia.org)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(done)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []

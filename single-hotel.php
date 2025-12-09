@@ -33,12 +33,12 @@ while ( have_posts() ) : the_post();
         'distance_train'   => get_post_meta( $post_id, 'distance_to_nearest_railroad_station', true ),
 
         // Rating & Stars
-        'rating'        => floatval( get_post_meta( $post_id, 'rating', true ) ) ?: 0,
-        'stars'         => floatval( get_post_meta( $post_id, 'stars', true ) ) ?: 0,
+        'rating'        => floatval( get_post_meta( $post_id, 'rating', true ) ),
+        'stars'         => floatval( get_post_meta( $post_id, 'stars', true ) ),
 
         // Capacity
-        'rooms'         => intval( get_post_meta( $post_id, 'rooms', true ) ) ?: 0,
-        'capacity'      => intval( get_post_meta( $post_id, 'capacity', true ) ) ?: 0,
+        'rooms'         => intval( get_post_meta( $post_id, 'rooms', true ) ),
+        'capacity'      => intval( get_post_meta( $post_id, 'capacity', true ) ),
 
         // Texts
         'description'   => get_post_meta( $post_id, 'description', true ) ?: get_the_content(),
@@ -185,6 +185,20 @@ while ( have_posts() ) : the_post();
                                     <span class="current-slide">1</span> / <span class="total-slides"><?php echo count( $gallery_images ); ?></span>
                                 </div>
 
+                                <?php if ( count( $gallery_images ) > 1 ) : ?>
+                                <!-- Navigation Arrows -->
+                                <button class="gallery-nav gallery-nav-prev" id="gallery-nav-prev" aria-label="<?php esc_attr_e( 'Vorheriges Bild', 'seminargo' ); ?>">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="15 18 9 12 15 6"></polyline>
+                                    </svg>
+                                </button>
+                                <button class="gallery-nav gallery-nav-next" id="gallery-nav-next" aria-label="<?php esc_attr_e( 'Nächstes Bild', 'seminargo' ); ?>">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                </button>
+                                <?php endif; ?>
+
                                 <!-- View All Button -->
                                 <button class="gallery-view-all" id="open-lightbox">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -221,7 +235,12 @@ while ( have_posts() ) : the_post();
                     <header class="hotel-header">
                         <div class="hotel-header-top">
                             <div class="hotel-title-area">
-                                <h1 class="hotel-title"><?php the_title(); ?></h1>
+                                <h1 class="hotel-title">
+                                    <?php the_title(); ?>
+                                    <?php if ( $hotel_data['stars'] > 0 ) : ?>
+                                        <span class="hotel-stars-text"><?php echo esc_html( $hotel_data['stars'] ); ?>S</span>
+                                    <?php endif; ?>
+                                </h1>
                                 <div class="hotel-address-header">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
@@ -231,22 +250,22 @@ while ( have_posts() ) : the_post();
                                 </div>
                             </div>
 
-                            <!-- Stars Badge with Rating -->
-                            <?php if ( $hotel_data['stars'] > 0 || $hotel_data['rating'] > 0 ) : ?>
+                            <!-- Rating Badge with Stars -->
+                            <?php if ( $hotel_data['rating'] > 0 ) : ?>
                                 <div class="hotel-stars-badge-large">
-                                    <?php if ( $hotel_data['stars'] > 0 ) : ?>
-                                        <span class="stars-display">
-                                            <?php
-                                            $full_stars = floor($hotel_data['stars']);
-                                            $half_star = ($hotel_data['stars'] - $full_stars) >= 0.5;
-                                            echo str_repeat('★', $full_stars);
-                                            if ($half_star) echo '<span class="half-star">★</span>';
-                                            ?>
-                                        </span>
-                                    <?php endif; ?>
-                                    <?php if ( $hotel_data['rating'] > 0 ) : ?>
-                                        <span class="rating-display"><?php echo number_format( $hotel_data['rating'], 1 ); ?>/10</span>
-                                    <?php endif; ?>
+                                    <?php
+                                    $rating_out_of_10 = $hotel_data['rating'];
+                                    $rating_out_of_5 = $rating_out_of_10 / 2;
+                                    $full_rating_stars = floor($rating_out_of_5);
+                                    $half_rating_star = ($rating_out_of_5 - $full_rating_stars) >= 0.5;
+                                    ?>
+                                    <span class="stars-display">
+                                        <?php
+                                        echo str_repeat('★', $full_rating_stars);
+                                        if ($half_rating_star) echo '<span class="half-star">★</span>';
+                                        ?>
+                                    </span>
+                                    <span class="rating-display"><?php echo number_format( $rating_out_of_10, 1 ); ?>/10</span>
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -929,10 +948,10 @@ while ( have_posts() ) : the_post();
                             'link'      => get_permalink(),
                             'image'     => $similar_image,
                             'location'  => $sim_location,
-                            'stars'     => floatval( get_post_meta( $similar_id, 'stars', true ) ) ?: 0,
-                            'rating'    => floatval( get_post_meta( $similar_id, 'rating', true ) ) ?: 0,
-                            'rooms'     => intval( get_post_meta( $similar_id, 'rooms', true ) ) ?: 0,
-                            'capacity'  => intval( get_post_meta( $similar_id, 'capacity', true ) ) ?: 0,
+                            'stars'     => floatval( get_post_meta( $similar_id, 'stars', true ) ),
+                            'rating'    => floatval( get_post_meta( $similar_id, 'rating', true ) ),
+                            'rooms'     => intval( get_post_meta( $similar_id, 'rooms', true ) ),
+                            'capacity'  => intval( get_post_meta( $similar_id, 'capacity', true ) ),
                         );
 
                         get_template_part( 'template-parts/hotel-card', null, $similar_hotel_data );

@@ -194,10 +194,10 @@ while ( have_posts() ) : the_post();
                             'link'     => get_permalink(),
                             'image'    => $hotel_image,
                             'location' => $hotel_city,
-                            'stars'    => floatval( get_post_meta( $hotel_id, 'stars', true ) ) ?: 0,
-                            'rating'   => floatval( get_post_meta( $hotel_id, 'rating', true ) ) ?: 0,
-                            'rooms'    => intval( get_post_meta( $hotel_id, 'rooms', true ) ) ?: 0,
-                            'capacity' => intval( get_post_meta( $hotel_id, 'capacity', true ) ) ?: 0,
+                            'stars'    => floatval( get_post_meta( $hotel_id, 'stars', true ) ),
+                            'rating'   => floatval( get_post_meta( $hotel_id, 'rating', true ) ),
+                            'rooms'    => intval( get_post_meta( $hotel_id, 'rooms', true ) ),
+                            'capacity' => intval( get_post_meta( $hotel_id, 'capacity', true ) ),
                         ];
 
                         get_template_part( 'template-parts/hotel-card', null, $hotel_data );

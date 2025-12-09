@@ -84,9 +84,36 @@
         const mainImageContainer = document.getElementById('gallery-main-image');
         const counter = gallery.querySelector('.gallery-counter .current-slide');
         const thumbnails = gallery.querySelectorAll('.gallery-thumb-btn');
+        const thumbnailsContainer = gallery.querySelector('.gallery-thumbnails');
         const viewAllBtn = document.getElementById('open-lightbox');
+        const prevBtn = document.getElementById('gallery-nav-prev');
+        const nextBtn = document.getElementById('gallery-nav-next');
 
         let currentIndex = 0;
+        const totalImages = thumbnails.length;
+
+        // Scroll thumbnail into view
+        const scrollThumbnailIntoView = (thumb) => {
+            if (!thumbnailsContainer || !thumb) return;
+
+            const containerRect = thumbnailsContainer.getBoundingClientRect();
+            const thumbRect = thumb.getBoundingClientRect();
+
+            // Calculate if thumbnail is outside the visible area
+            const isOutOfView =
+                thumbRect.left < containerRect.left ||
+                thumbRect.right > containerRect.right;
+
+            if (isOutOfView) {
+                // Scroll to center the thumbnail
+                const scrollLeft = thumb.offsetLeft - (thumbnailsContainer.offsetWidth / 2) + (thumb.offsetWidth / 2);
+
+                thumbnailsContainer.scrollTo({
+                    left: scrollLeft,
+                    behavior: 'smooth'
+                });
+            }
+        };
 
         // Update main image
         const updateMainImage = (index) => {
@@ -108,6 +135,9 @@
             thumbnails.forEach((t, i) => {
                 t.classList.toggle('active', i === index);
             });
+
+            // Scroll active thumbnail into view
+            scrollThumbnailIntoView(thumb);
         };
 
         // Thumbnail clicks change main image
@@ -118,11 +148,29 @@
             });
         });
 
+        // Previous button
+        if (prevBtn) {
+            prevBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newIndex = currentIndex === 0 ? totalImages - 1 : currentIndex - 1;
+                updateMainImage(newIndex);
+            });
+        }
+
+        // Next button
+        if (nextBtn) {
+            nextBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newIndex = currentIndex === totalImages - 1 ? 0 : currentIndex + 1;
+                updateMainImage(newIndex);
+            });
+        }
+
         // Main image click opens lightbox
         if (mainImageContainer) {
             mainImageContainer.addEventListener('click', (e) => {
-                // Don't open lightbox if clicking the view all button
-                if (e.target.closest('.gallery-view-all')) return;
+                // Don't open lightbox if clicking the view all button or nav buttons
+                if (e.target.closest('.gallery-view-all') || e.target.closest('.gallery-nav')) return;
                 openLightbox(currentIndex);
             });
         }
@@ -148,6 +196,7 @@
         const image = document.getElementById('lightbox-image');
         const counter = lightbox.querySelector('.lightbox-counter .current-slide');
         const thumbnails = lightbox.querySelectorAll('.lightbox-thumb-btn');
+        const thumbnailsContainer = lightbox.querySelector('.lightbox-thumbnails');
 
         // Get all image sources from data attribute or thumbnails
         const mainImage = document.getElementById('gallery-current-image');
@@ -166,6 +215,29 @@
             const thumbs = document.querySelectorAll('.gallery-thumb-btn');
             imageSources = Array.from(thumbs).map(t => t.getAttribute('data-src'));
         }
+
+        // Scroll lightbox thumbnail into view
+        const scrollLightboxThumbnailIntoView = (thumb) => {
+            if (!thumbnailsContainer || !thumb) return;
+
+            const containerRect = thumbnailsContainer.getBoundingClientRect();
+            const thumbRect = thumb.getBoundingClientRect();
+
+            // Calculate if thumbnail is outside the visible area
+            const isOutOfView =
+                thumbRect.left < containerRect.left ||
+                thumbRect.right > containerRect.right;
+
+            if (isOutOfView) {
+                // Scroll to center the thumbnail
+                const scrollLeft = thumb.offsetLeft - (thumbnailsContainer.offsetWidth / 2) + (thumb.offsetWidth / 2);
+
+                thumbnailsContainer.scrollTo({
+                    left: scrollLeft,
+                    behavior: 'smooth'
+                });
+            }
+        };
 
         // Close lightbox
         const closeLightbox = () => {
@@ -193,6 +265,12 @@
             thumbnails.forEach((thumb, i) => {
                 thumb.classList.toggle('active', i === index);
             });
+
+            // Scroll active thumbnail into view
+            const activeThumb = thumbnails[index];
+            if (activeThumb) {
+                scrollLightboxThumbnailIntoView(activeThumb);
+            }
         };
 
         // Navigation
@@ -424,25 +502,33 @@
         const lng = parseFloat(mapElement.getAttribute('data-lng'));
         const hotelName = mapElement.getAttribute('data-name');
 
-        // Initialize map
-        const map = L.map('hotel-map').setView([lat, lng], 13);
+        // Initialize map with custom styling
+        const map = L.map('hotel-map', {
+            zoomControl: true,
+            attributionControl: true
+        }).setView([lat, lng], 12);
 
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 19
+        // Use CartoDB Positron tiles as base (light, minimal style)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
         }).addTo(map);
 
         // Custom marker icon (berry colored)
         const customIcon = L.divIcon({
             className: 'custom-marker',
-            html: `<div style="background: #AC2A6E; width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"><div style="width: 12px; height: 12px; background: white; border-radius: 50%; position: absolute; top: 6px; left: 6px;"></div></div>`,
-            iconSize: [30, 30],
-            iconAnchor: [15, 30]
+            html: `<div style="background: #AC2A6E; width: 34px; height: 34px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 4px 12px rgba(172, 42, 110, 0.4);"><div style="width: 14px; height: 14px; background: white; border-radius: 50%; position: absolute; top: 7px; left: 7px;"></div></div>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 34]
         });
 
-        // Add marker
-        L.marker([lat, lng], { icon: customIcon }).addTo(map);
+        // Add marker with popup
+        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+
+        if (hotelName) {
+            marker.bindPopup(`<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 4px 0;"><strong style="color: #AC2A6E; font-size: 14px;">${hotelName}</strong></div>`);
+        }
     };
 
     // Initialize all features

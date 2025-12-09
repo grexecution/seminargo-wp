@@ -751,6 +751,7 @@ body.slide-menu-open {
     min-height: 80px;
     position: relative;
     z-index: 100;
+    overflow: hidden;
 }
 
 /* Ensure widget elements are fully clickable */
@@ -1173,16 +1174,11 @@ a.btn-inspirier:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
-    transition: opacity var(--transition-base);
     cursor: pointer;
 }
 
-.logo-item:hover {
-    opacity: 1;
-}
-
-.logo-item svg {
+.logo-item svg,
+.logo-item img {
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -3680,6 +3676,20 @@ body.single-hotel {
     margin-top: 2px;
 }
 
+/* Hotel Stars Text (classification like "4S" or "5S" after hotel title) */
+.hotel-stars-text {
+    display: inline-block;
+    font-size: 0.6em;
+    color: #8A1F56;
+    font-weight: 600;
+    vertical-align: middle;
+    line-height: 1;
+    background: #fce7f3;
+    padding: 0.3em 0.6em;
+    border-radius: 4px;
+}
+
+/* Rating Badge (with star symbols and rating number) */
 .hotel-stars-badge-large {
     display: inline-flex;
     align-items: center;
@@ -4797,23 +4807,92 @@ a.btn-info-link svg {
 
 #hotel-map {
     width: 100%;
-    height: 250px;
+    height: 300px;
     border-radius: 0;
+    overflow: hidden;
+    background: #f9fafb;
+}
+
+/* Leaflet controls styling (zoom buttons) */
+#hotel-map .leaflet-control-zoom {
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     overflow: hidden;
 }
 
+#hotel-map .leaflet-control-zoom a {
+    background: white;
+    color: #374151;
+    border-bottom: 1px solid #e5e7eb;
+    width: 34px;
+    height: 34px;
+    line-height: 34px;
+    font-size: 20px;
+    transition: all 0.2s ease;
+}
+
+#hotel-map .leaflet-control-zoom a:hover {
+    background: #fce7f3;
+    color: #AC2A6E;
+}
+
+#hotel-map .leaflet-control-zoom a:last-child {
+    border-bottom: none;
+}
+
+/* Attribution styling */
+#hotel-map .leaflet-control-attribution {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(4px);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px 0 0 0;
+}
+
+#hotel-map .leaflet-control-attribution a {
+    color: #6b7280;
+}
+
+/* Custom marker */
 .custom-marker {
     background: transparent;
     border: none;
 }
 
+/* Popup styling */
 .leaflet-popup-content-wrapper {
-    border-radius: 8px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    padding: 8px;
+    background: white;
+}
+
+.leaflet-popup-content {
+    margin: 8px 12px;
+    line-height: 1.4;
 }
 
 .leaflet-popup-content strong {
     color: #AC2A6E;
-    font-size: 0.9375rem;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.leaflet-popup-tip {
+    background: white;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup-close-button {
+    color: #9ca3af !important;
+    font-size: 20px !important;
+    padding: 6px 8px !important;
+    transition: color 0.2s ease;
+}
+
+.leaflet-popup-close-button:hover {
+    color: #AC2A6E !important;
 }
 
 /* Quick Info */
@@ -4954,6 +5033,12 @@ a.btn-info-link svg {
 @media (max-width: 768px) {
     .hotel-card .hotel-title {
         font-size: var(--text-2xl);
+    }
+
+    /* Smaller stars text on mobile cards */
+    .hotel-card .hotel-stars-text {
+        font-size: 0.55em;
+        margin-left: 0.4em;
     }
 
     .key-features-grid {
@@ -5707,15 +5792,16 @@ a.btn-info-link svg {
     align-items: start;
 }
 
-.hotel-gallery-column {
+.hotel-layout-two-col .hotel-gallery-column {
     position: sticky;
     top: 100px;
-    width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .hotel-layout-two-col .hotel-content-column {
-    width: 100%;
     min-width: 0;
+    max-width: 100%;
 }
 
 /* Smaller rating stars and text */
@@ -5766,35 +5852,43 @@ a.btn-info-link svg {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 48px;
-    height: 48px;
-    background: rgba(255, 255, 255, 0.95);
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(4px);
     border: none;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.25s ease;
     z-index: 10;
+    opacity: 0.7;
 }
 
 .gallery-nav:hover {
-    background: #fff;
-    transform: translateY(-50%) scale(1.05);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    background: rgba(255, 255, 255, 1);
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 4px 16px rgba(172, 42, 110, 0.15);
+    opacity: 1;
 }
 
 .gallery-nav svg {
     color: var(--color-gray-700);
+    transition: color 0.25s ease;
 }
 
-.gallery-prev {
+.gallery-nav:hover svg {
+    color: #AC2A6E;
+}
+
+.gallery-nav-prev {
     left: 16px;
 }
 
-.gallery-next {
+.gallery-nav-next {
     right: 16px;
 }
 
@@ -5845,17 +5939,12 @@ a.btn-info-link svg {
     gap: 8px;
     padding: 12px 0;
     overflow-x: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-gray-300) transparent;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
 }
 
 .gallery-thumbnails::-webkit-scrollbar {
-    height: 6px;
-}
-
-.gallery-thumbnails::-webkit-scrollbar-thumb {
-    background: var(--color-gray-300);
-    border-radius: 3px;
+    display: none; /* Chrome/Safari/Opera */
 }
 
 .gallery-thumb-btn {
@@ -6019,8 +6108,12 @@ a.btn-info-link svg {
     max-width: 90%;
     overflow-x: auto;
     padding: 8px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+.lightbox-thumbnails::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Opera */
 }
 
 .lightbox-thumb-btn {
@@ -6057,14 +6150,16 @@ a.btn-info-link svg {
    ========================================================================== */
 
 .hotel-features-categories {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 32px;
+    column-count: 3;
+    column-gap: 32px;
     margin-top: 24px;
 }
 
 .feature-category {
     /* No background box - clean inline with description */
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 32px;
 }
 
 .feature-category h3 {
@@ -6244,6 +6339,14 @@ a.btn-info-link svg {
     }
 }
 
+/* Tablet: 2 columns for amenities */
+@media (max-width: 1024px) {
+    .hotel-features-categories {
+        column-count: 2;
+        column-gap: 24px;
+    }
+}
+
 @media (max-width: 768px) {
     .gallery-carousel {
         border-radius: 8px;
@@ -6263,11 +6366,11 @@ a.btn-info-link svg {
         height: 20px;
     }
 
-    .gallery-prev {
+    .gallery-nav-prev {
         left: 8px;
     }
 
-    .gallery-next {
+    .gallery-nav-next {
         right: 8px;
     }
 
@@ -6313,9 +6416,13 @@ a.btn-info-link svg {
     }
 
     .hotel-features-categories {
-        grid-template-columns: 1fr;
-        gap: 24px;
+        column-count: 1;
+        column-gap: 0;
         margin-top: 20px;
+    }
+
+    .feature-category {
+        margin-bottom: 24px;
     }
 
     .similar-hotels-section {
@@ -6362,7 +6469,13 @@ body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
         font-size: 1.5rem !important;
     }
 
-    /* Reorder hotel header on mobile: stars first, then name, then address */
+    /* Smaller stars text on mobile */
+    .hotel-stars-text {
+        font-size: 0.55em;
+        margin-left: 0.4em;
+    }
+
+    /* Reorder hotel header on mobile: rating first, then name, then address */
     .hotel-header-top {
         flex-direction: column;
         align-items: flex-start;
@@ -8333,5 +8446,229 @@ body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
 
     .related-posts-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================================================
+   404 Error Page Styles
+   ========================================================================== */
+
+/* 404 Hero Section */
+.error-404-hero {
+    padding: 120px 0 96px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    text-align: center;
+}
+
+.error-404-content {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.error-404-number {
+    font-size: 10rem;
+    font-weight: 900;
+    color: #AC2A6E;
+    line-height: 1;
+    margin-bottom: var(--spacing-lg);
+    background: linear-gradient(135deg, #AC2A6E 0%, #D93A8A 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.error-404-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-gray-900);
+    margin-bottom: var(--spacing-lg);
+}
+
+.error-404-subtitle {
+    font-size: 1.125rem;
+    color: var(--color-gray-600);
+    margin-bottom: var(--spacing-3xl);
+    line-height: 1.6;
+}
+
+.error-404-actions {
+    display: flex;
+    gap: var(--spacing-lg);
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.error-404-actions .button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 14px 28px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.error-404-actions .button-primary {
+    background: linear-gradient(135deg, #AC2A6E 0%, #D93A8A 100%);
+    color: white;
+    border: none;
+}
+
+.error-404-actions .button-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(172, 42, 110, 0.3);
+}
+
+.error-404-actions .button-outline {
+    background: white;
+    color: #AC2A6E;
+    border: 2px solid #AC2A6E;
+}
+
+.error-404-actions .button-outline:hover {
+    background: #AC2A6E;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(172, 42, 110, 0.2);
+}
+
+/* 404 Links Section */
+.error-404-links-section {
+    padding: var(--spacing-5xl) 0;
+    background: white;
+}
+
+.error-404-links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--spacing-xl);
+    margin-top: var(--spacing-3xl);
+}
+
+.error-404-link-card {
+    background: white;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 12px;
+    padding: var(--spacing-xl);
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.error-404-link-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+    border-color: #AC2A6E;
+}
+
+.link-card-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto var(--spacing-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #AC2A6E 0%, #D93A8A 100%);
+    border-radius: 50%;
+    color: white;
+}
+
+.link-card-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-gray-900);
+    margin-bottom: var(--spacing-sm);
+}
+
+.link-card-description {
+    font-size: 0.9375rem;
+    color: var(--color-gray-600);
+    margin-bottom: var(--spacing-lg);
+    line-height: 1.6;
+}
+
+.link-card-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    color: #AC2A6E;
+    font-weight: 600;
+    text-decoration: none;
+    transition: gap 0.3s ease;
+}
+
+.link-card-link:hover {
+    gap: var(--spacing-sm);
+}
+
+.link-card-link svg {
+    transition: transform 0.3s ease;
+}
+
+.link-card-link:hover svg {
+    transform: translateX(4px);
+}
+
+/* 404 Hotels Section */
+.error-404-hotels-section {
+    padding: var(--spacing-5xl) 0;
+    background: linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .error-404-hero {
+        padding: 96px 0 80px;
+    }
+
+    .error-404-number {
+        font-size: 6rem;
+    }
+
+    .error-404-title {
+        font-size: 1.75rem;
+    }
+
+    .error-404-subtitle {
+        font-size: 1rem;
+    }
+
+    .error-404-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .error-404-actions .button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .error-404-links-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .error-404-hero {
+        padding: 80px 0 64px;
+    }
+
+    .error-404-number {
+        font-size: 4rem;
+    }
+
+    .error-404-title {
+        font-size: 1.5rem;
+    }
+
+    .link-card-icon {
+        width: 56px;
+        height: 56px;
+    }
+
+    .error-404-link-card {
+        padding: var(--spacing-lg);
     }
 }
