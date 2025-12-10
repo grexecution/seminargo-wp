@@ -2554,6 +2554,7 @@ a.btn-inspirier:hover {
    ========================================================================== */
 .popular-locations-section {
     padding: var(--spacing-4xl) 0;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 50%, #ffffff 100%);
 }
 
 

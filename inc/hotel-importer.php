@@ -31,7 +31,6 @@ class Seminargo_Hotel_Importer {
         // Cron
         add_action( 'init', [ $this, 'register_cron' ] );
         add_action( 'seminargo_hotels_cron', [ $this, 'run_import' ] );
-        add_action( 'seminargo_hotels_import_now', [ $this, 'run_import' ] );
 
         // Register hotel post type if not exists
         add_action( 'init', [ $this, 'register_post_type' ] );
@@ -1007,17 +1006,12 @@ class Seminargo_Hotel_Importer {
         // Immediately log that import has been triggered
         $this->log( 'info', '👤 Import triggered by user: ' . wp_get_current_user()->user_login );
 
-        // Spawn import in background to avoid AJAX timeout
-        wp_schedule_single_event( time(), 'seminargo_hotels_import_now' );
+        // Increase timeout for AJAX request
+        @ini_set( 'max_execution_time', 600 );
+        @set_time_limit( 600 );
 
-        // Trigger WP Cron immediately (non-blocking)
-        spawn_cron();
-
-        // Return immediately
-        wp_send_json_success( [
-            'message' => __( 'Import started in background', 'seminargo' ),
-            'started' => true
-        ] );
+        $result = $this->run_import();
+        wp_send_json_success( $result );
     }
 
     /**
