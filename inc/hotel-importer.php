@@ -1006,12 +1006,23 @@ class Seminargo_Hotel_Importer {
         // Immediately log that import has been triggered
         $this->log( 'info', '👤 Import triggered by user: ' . wp_get_current_user()->user_login );
 
-        // Increase timeout for AJAX request
-        @ini_set( 'max_execution_time', 600 );
-        @set_time_limit( 600 );
+        // Increase timeout and memory for AJAX request (within production limits)
+        @ini_set( 'max_execution_time', 0 ); // Unlimited
+        @set_time_limit( 0 ); // Unlimited
+        @ini_set( 'memory_limit', '512M' ); // Increase to 512M (production safe)
 
-        $result = $this->run_import();
-        wp_send_json_success( $result );
+        // Disable output buffering to prevent timeouts
+        if ( ob_get_level() ) {
+            ob_end_clean();
+        }
+
+        try {
+            $result = $this->run_import();
+            wp_send_json_success( $result );
+        } catch ( Exception $e ) {
+            $this->log( 'error', '💥 AJAX handler caught exception: ' . $e->getMessage() );
+            wp_send_json_error( $e->getMessage() );
+        }
     }
 
     /**
@@ -1074,21 +1085,27 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
-     * Fetch hotels from API with pagination
+     * Fetch hotels from API with pagination and process them immediately
      */
-    private function fetch_hotels_from_api() {
-        $all_hotels = [];
+    private function fetch_and_process_hotels( &$stats ) {
+        // Ensure we don't timeout during API fetching
+        @set_time_limit( 0 ); // No limit
+        @ini_set( 'max_execution_time', 0 );
+
         $batch_size = 200; // Fetch 200 hotels per batch (balanced between performance and reliability)
         $skip = 0;
         $has_more = true;
+        $total_fetched = 0;
+        $all_api_hotel_ids = []; // Just track IDs, not full hotel objects
 
-        $this->log( 'info', '📥 Starting batched hotel fetch (batch size: ' . $batch_size . ')' );
+        $this->log( 'info', '📥 Starting batched hotel fetch and process (batch size: ' . $batch_size . ')' );
 
         while ( $has_more ) {
-            $batch_number = ( $skip / $batch_size ) + 1;
-            $this->log( 'info', '📦 Batch ' . $batch_number . ': Fetching hotels ' . $skip . '-' . ( $skip + $batch_size ) );
+            try {
+                $batch_number = ( $skip / $batch_size ) + 1;
+                $this->log( 'info', '📦 Batch ' . $batch_number . ': Fetching hotels ' . $skip . '-' . ( $skip + $batch_size ) );
 
-            $query = '{
+                $query = '{
                 hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
                     id
                     slug
@@ -1208,19 +1225,56 @@ class Seminargo_Hotel_Importer {
                 $has_more = false;
                 $this->log( 'info', '📭 No more hotels available from API - stopping pagination' );
             } else {
-                // Add to collection
-                $all_hotels = array_merge( $all_hotels, $batch_hotels );
+                // Process this batch immediately (saves memory)
+                $this->log( 'info', '🔄 Processing batch ' . $batch_number . ' (' . $batch_count . ' hotels)...' );
 
-                // Increment skip by actual count received (API may have per-request limits)
-                $old_skip = $skip;
+                foreach ( $batch_hotels as $hotel ) {
+                    try {
+                        // Track API hotel ID
+                        $all_api_hotel_ids[] = strval( $hotel->id );
+
+                        // Process hotel immediately
+                        $result = $this->process_hotel( $hotel );
+                        if ( $result === 'created' ) {
+                            $stats['created']++;
+                        } elseif ( $result === 'updated' ) {
+                            $stats['updated']++;
+                        }
+                    } catch ( Exception $e ) {
+                        $this->log( 'error', '❌ Error processing hotel ' . $hotel->businessName . ': ' . $e->getMessage(), $hotel->businessName );
+                        $stats['errors']++;
+                    }
+                }
+
+                $total_fetched += $batch_count;
+
+                // Free memory
+                unset( $batch_hotels );
+                if ( function_exists( 'gc_collect_cycles' ) ) {
+                    gc_collect_cycles();
+                }
+
+                // Increment skip by actual count received
                 $skip += $batch_count;
 
-                $this->log( 'info', '➡️ Continuing pagination: next skip=' . $skip . ' (received ' . $batch_count . ' hotels, total so far: ' . count( $all_hotels ) . ')' );
+                // Check memory usage
+                $memory_used = round( memory_get_usage() / 1024 / 1024, 2 );
+                $memory_limit = ini_get( 'memory_limit' );
+
+                $this->log( 'info', '✅ Batch ' . $batch_number . ' complete | Total processed: ' . $total_fetched . ' | Memory: ' . $memory_used . 'MB / ' . $memory_limit );
+
+                // Reset execution time for next batch
+                @set_time_limit( 300 );
+            }
+            } catch ( Exception $e ) {
+                $this->log( 'error', '❌ Batch ' . $batch_number . ' failed: ' . $e->getMessage() );
+                $this->log( 'error', '❌ Stopping pagination due to error. Processed ' . $total_fetched . ' hotels so far.' );
+                throw $e; // Re-throw to be caught by outer try/catch
             }
         }
 
-        $this->log( 'info', '✅ Total hotels fetched from all batches: ' . count( $all_hotels ) );
-        return $all_hotels;
+        $this->log( 'info', '✅ Total hotels fetched and processed: ' . $total_fetched );
+        return $all_api_hotel_ids; // Return just IDs for drafting check
     }
 
     /**
@@ -1265,56 +1319,23 @@ class Seminargo_Hotel_Importer {
         $this->log( 'info', '⏳ Fetching hotels from API (this may take 1-2 minutes)...' );
 
         try {
-            $hotels = $this->fetch_hotels_from_api();
+            // Get ALL existing WordPress hotel IDs before fetching (for drafting check later)
+            $existing_wp_hotels = $this->get_all_wordpress_hotel_ids();
+            $this->log( 'info', '📊 WordPress hotel IDs (' . count( $existing_wp_hotels ) . '): ' . implode( ', ', array_slice( $existing_wp_hotels, 0, 10 ) ) . ( count( $existing_wp_hotels ) > 10 ? '...' : '' ) );
 
-            if ( empty( $hotels ) ) {
+            // Fetch and process hotels in batches (memory efficient)
+            $this->log( 'info', '🔄 Starting fetch and process...' );
+            $api_hotel_ids = $this->fetch_and_process_hotels( $stats );
+            $this->log( 'info', '✅ Fetch and process completed' );
+
+            if ( empty( $api_hotel_ids ) ) {
                 $this->log( 'error', '⚠️ No hotels received from API' );
                 $stats['errors']++;
                 update_option( $this->last_import_option, $stats );
                 return $stats;
             }
 
-            $this->log( 'info', '📦 Received ' . count( $hotels ) . ' hotels from API' );
-
-            // Get all API hotel IDs (as strings for comparison)
-            $api_hotel_ids = [];
-            foreach ( $hotels as $hotel ) {
-                $api_hotel_ids[] = strval( $hotel->id );
-            }
-
             $this->log( 'info', '📊 API hotel IDs (' . count( $api_hotel_ids ) . '): ' . implode( ', ', array_slice( $api_hotel_ids, 0, 10 ) ) . ( count( $api_hotel_ids ) > 10 ? '...' : '' ) );
-
-            // Get ALL existing WordPress hotel IDs (not just previously imported)
-            $existing_wp_hotels = $this->get_all_wordpress_hotel_ids();
-            $this->log( 'info', '📊 WordPress hotel IDs (' . count( $existing_wp_hotels ) . '): ' . implode( ', ', array_slice( $existing_wp_hotels, 0, 10 ) ) . ( count( $existing_wp_hotels ) > 10 ? '...' : '' ) );
-
-            // Process each hotel from API
-            $total_hotels = count( $hotels );
-            $processed_count = 0;
-
-            foreach ( $hotels as $hotel ) {
-                try {
-                    $result = $this->process_hotel( $hotel );
-                    if ( $result === 'created' ) {
-                        $stats['created']++;
-                    } elseif ( $result === 'updated' ) {
-                        $stats['updated']++;
-                    }
-
-                    $processed_count++;
-
-                    // Log progress every 50 hotels
-                    if ( $processed_count % 50 === 0 || $processed_count === $total_hotels ) {
-                        $percentage = round( ( $processed_count / $total_hotels ) * 100 );
-                        $this->log( 'info', '⏳ Progress: ' . $processed_count . '/' . $total_hotels . ' hotels processed (' . $percentage . '%)' );
-                    }
-
-                } catch ( Exception $e ) {
-                    $this->log( 'error', '❌ Error processing hotel ' . $hotel->businessName . ': ' . $e->getMessage(), $hotel->businessName );
-                    $stats['errors']++;
-                    $processed_count++;
-                }
-            }
 
             // Draft ALL WordPress hotels that are NOT in the API feed
             $hotels_to_draft = array_diff( $existing_wp_hotels, $api_hotel_ids );
@@ -1363,6 +1384,12 @@ class Seminargo_Hotel_Importer {
 
         } catch ( Exception $e ) {
             $this->log( 'error', '💥 Import failed: ' . $e->getMessage() );
+            $this->log( 'error', '💥 Exception trace: ' . $e->getTraceAsString() );
+            $stats['errors']++;
+        } catch ( Error $e ) {
+            // Catch fatal errors too
+            $this->log( 'error', '💀 Fatal error during import: ' . $e->getMessage() );
+            $this->log( 'error', '💀 Error trace: ' . $e->getTraceAsString() );
             $stats['errors']++;
         }
 
