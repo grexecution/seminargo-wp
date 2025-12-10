@@ -403,3 +403,13 @@ function seminargo_upload_mimes( $mimes ) {
     return $mimes;
 }
 add_filter( 'upload_mimes', 'seminargo_upload_mimes' );
+
+/**
+ * Remove "Mine" filter from Hotels admin list
+ * All hotels are API-imported, not user-authored
+ */
+function seminargo_remove_mine_filter( $views ) {
+    unset( $views['mine'] );
+    return $views;
+}
+add_filter( 'views_edit-hotel', 'seminargo_remove_mine_filter' );

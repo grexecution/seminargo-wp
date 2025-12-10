@@ -1689,10 +1689,33 @@ class Seminargo_Hotel_Importer {
                 }
 
                 $image_name = basename( $media->url ?? $media->path );
+
+                // Replace spaces with hyphens
+                $image_name = str_replace( ' ', '-', $image_name );
+
                 $image_name = sanitize_file_name( $image_name );
 
                 // Normalize file extension to lowercase (fix for .JPG vs .jpg)
                 $image_name = strtolower( $image_name );
+
+                // If no extension, try to detect from URL or default to .jpg
+                $path_info = pathinfo( $image_name );
+                if ( empty( $path_info['extension'] ) ) {
+                    // Try to get extension from media object
+                    if ( ! empty( $media->mimeType ) ) {
+                        $ext_map = [
+                            'image/jpeg' => 'jpg',
+                            'image/jpg'  => 'jpg',
+                            'image/png'  => 'png',
+                            'image/gif'  => 'gif',
+                            'image/webp' => 'webp',
+                        ];
+                        $ext = $ext_map[ $media->mimeType ] ?? 'jpg';
+                        $image_name .= '.' . $ext;
+                    } else {
+                        $image_name .= '.jpg'; // Default fallback
+                    }
+                }
 
                 // Check if image already exists
                 $existing = get_posts( [
@@ -1709,11 +1732,15 @@ class Seminargo_Hotel_Importer {
                 if ( ! empty( $existing ) ) {
                     $attachment_id = $existing[0]->ID;
                 } else {
+                    // Temporarily allow all image uploads (for import process)
+                    add_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
+
                     // Download and create attachment
                     $tmp = download_url( $image_url );
 
                     if ( is_wp_error( $tmp ) ) {
                         $this->log( 'error', 'Failed to download image: ' . $image_url, $hotel->businessName );
+                        remove_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
                         continue;
                     }
 
@@ -1722,13 +1749,16 @@ class Seminargo_Hotel_Importer {
                         'tmp_name' => $tmp,
                     ];
 
-                    // Set MIME type explicitly to help WordPress recognize the file
+                    // Set MIME type explicitly
                     $file_type = wp_check_filetype( $image_name );
                     if ( $file_type['type'] ) {
                         $file_array['type'] = $file_type['type'];
                     }
 
                     $attachment_id = media_handle_sideload( $file_array, $post_id );
+
+                    // Remove temporary filter
+                    remove_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
 
                     if ( is_wp_error( $attachment_id ) ) {
                         @unlink( $tmp );
@@ -1760,6 +1790,21 @@ class Seminargo_Hotel_Importer {
                 update_field( 'gallery', $gallery_ids, $post_id );
             }
         }
+    }
+
+    /**
+     * Allow all common image MIME types during import
+     *
+     * @param array $mimes Existing MIME types
+     * @return array Modified MIME types
+     */
+    public function allow_image_mimes( $mimes ) {
+        $mimes['jpg|jpeg|jpe'] = 'image/jpeg';
+        $mimes['gif'] = 'image/gif';
+        $mimes['png'] = 'image/png';
+        $mimes['bmp'] = 'image/bmp';
+        $mimes['webp'] = 'image/webp';
+        return $mimes;
     }
 }
 
