@@ -28,6 +28,11 @@ class Seminargo_Hotel_Importer {
         add_action( 'wp_ajax_seminargo_get_logs', [ $this, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_seminargo_clear_logs', [ $this, 'ajax_clear_logs' ] );
 
+        // New chunked batch processing handlers
+        add_action( 'wp_ajax_seminargo_start_import', [ $this, 'ajax_start_import' ] );
+        add_action( 'wp_ajax_seminargo_process_batch', [ $this, 'ajax_process_batch' ] );
+        add_action( 'wp_ajax_seminargo_finalize_import', [ $this, 'ajax_finalize_import' ] );
+
         // Cron
         add_action( 'init', [ $this, 'register_cron' ] );
         add_action( 'seminargo_hotels_cron', [ $this, 'run_import' ] );
@@ -913,65 +918,156 @@ class Seminargo_Hotel_Importer {
                 return str.length > 50 ? str.substring(0, 50) + '...' : str;
             }
 
+            // Chunked batch import handler
             $('#btn-fetch-now').on('click', function() {
                 var btn = $(this);
                 btn.prop('disabled', true).text('⏳ <?php echo esc_js( __( 'Importing...', 'seminargo' ) ); ?>');
 
                 $('#import-progress').show();
-                $('#progress-bar').css('width', '10%');
-                $('#progress-text').text('<?php echo esc_js( __( 'Connecting to API...', 'seminargo' ) ); ?>');
+                $('#progress-bar').css('width', '0%').css('background', '#AC2A6E');
+                $('#progress-text').text('<?php echo esc_js( __( 'Initializing import...', 'seminargo' ) ); ?>');
 
                 // Auto-refresh logs every 2 seconds during import for live updates
                 var logRefreshInterval = setInterval(function() {
                     loadLogs();
-                    $('#progress-bar').css('width', '50%'); // Show activity
                 }, 2000);
 
                 // Immediate first refresh
                 setTimeout(function() { loadLogs(); }, 500);
 
+                var currentBatch = 0;
+                var totalProcessed = 0;
+
+                // Step 1: Start import (initialize session)
                 $.ajax({
                     url: ajaxurl,
                     type: 'POST',
-                    data: { action: 'seminargo_fetch_hotels' },
-                    timeout: 600000, // 10 minutes timeout for large imports
-                    success: function(response) {
-                        clearInterval(logRefreshInterval); // Stop auto-refresh
-                        btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
-
-                        if (response.success) {
-                            $('#progress-bar').css('width', '100%');
-                            $('#progress-text').text('✅ <?php echo esc_js( __( 'Import completed!', 'seminargo' ) ); ?>');
-
-                            $('#stat-created').text(response.data.created);
-                            $('#stat-updated').text(response.data.updated);
-                            $('#stat-drafted').text(response.data.drafted);
-                            $('#stat-errors').text(response.data.errors);
-
-                            loadLogs();
-
-                            setTimeout(function() {
-                                $('#import-progress').fadeOut();
-                            }, 3000);
-                        } else {
+                    data: { action: 'seminargo_start_import' },
+                    timeout: 60000, // 1 minute timeout for initialization
+                    success: function(initResponse) {
+                        if (!initResponse.success) {
+                            clearInterval(logRefreshInterval);
+                            btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
                             $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
-                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Error:', 'seminargo' ) ); ?> ' + response.data);
+                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Initialization failed:', 'seminargo' ) ); ?> ' + initResponse.data);
+                            return;
                         }
+
+                        $('#progress-bar').css('width', '5%');
+                        $('#progress-text').text('✅ <?php echo esc_js( __( 'Import initialized, processing hotels...', 'seminargo' ) ); ?>');
+
+                        // Step 2: Process batches sequentially
+                        function processBatch(batchNumber) {
+                            $.ajax({
+                                url: ajaxurl,
+                                type: 'POST',
+                                data: {
+                                    action: 'seminargo_process_batch',
+                                    batch: batchNumber
+                                },
+                                timeout: 300000, // 5 minutes per batch
+                                success: function(batchResponse) {
+                                    if (!batchResponse.success) {
+                                        clearInterval(logRefreshInterval);
+                                        btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+                                        $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
+                                        $('#progress-text').text('❌ <?php echo esc_js( __( 'Batch failed:', 'seminargo' ) ); ?> ' + batchResponse.data);
+                                        return;
+                                    }
+
+                                    var data = batchResponse.data;
+                                    totalProcessed += data.count;
+
+                                    // Update stats in real-time
+                                    $('#stat-created').text(data.stats.created);
+                                    $('#stat-updated').text(data.stats.updated);
+                                    $('#stat-errors').text(data.stats.errors);
+
+                                    // Update progress (we don't know total, so show activity)
+                                    var progress = Math.min(10 + (batchNumber * 5), 85);
+                                    $('#progress-bar').css('width', progress + '%');
+                                    $('#progress-text').text('📦 <?php echo esc_js( __( 'Batch', 'seminargo' ) ); ?> ' + (batchNumber + 1) + ' <?php echo esc_js( __( 'complete | Total:', 'seminargo' ) ); ?> ' + totalProcessed + ' <?php echo esc_js( __( 'hotels | Created:', 'seminargo' ) ); ?> ' + data.stats.created + ' | <?php echo esc_js( __( 'Updated:', 'seminargo' ) ); ?> ' + data.stats.updated + ' | <?php echo esc_js( __( 'Errors:', 'seminargo' ) ); ?> ' + data.stats.errors);
+
+                                    // Refresh logs
+                                    loadLogs();
+
+                                    if (data.has_more) {
+                                        // Continue to next batch
+                                        processBatch(batchNumber + 1);
+                                    } else {
+                                        // No more batches, finalize
+                                        finalizeBatch(data.stats);
+                                    }
+                                },
+                                error: function(xhr, status, error) {
+                                    clearInterval(logRefreshInterval);
+                                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+                                    $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
+
+                                    if (status === 'timeout') {
+                                        $('#progress-text').text('⏱️ <?php echo esc_js( __( 'Batch timeout - check logs for details', 'seminargo' ) ); ?>');
+                                    } else {
+                                        $('#progress-text').text('❌ <?php echo esc_js( __( 'Batch failed:', 'seminargo' ) ); ?> ' + error);
+                                    }
+
+                                    loadLogs();
+                                }
+                            });
+                        }
+
+                        // Step 3: Finalize (draft hotels not in API)
+                        function finalizeBatch(stats) {
+                            $('#progress-bar').css('width', '90%');
+                            $('#progress-text').text('🔄 <?php echo esc_js( __( 'Finalizing import...', 'seminargo' ) ); ?>');
+
+                            $.ajax({
+                                url: ajaxurl,
+                                type: 'POST',
+                                data: { action: 'seminargo_finalize_import' },
+                                timeout: 300000, // 5 minutes for finalization
+                                success: function(finalResponse) {
+                                    clearInterval(logRefreshInterval);
+                                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+
+                                    if (finalResponse.success) {
+                                        $('#progress-bar').css('width', '100%');
+                                        $('#progress-text').text('✅ <?php echo esc_js( __( 'Import completed successfully!', 'seminargo' ) ); ?>');
+
+                                        var finalStats = finalResponse.data;
+                                        $('#stat-created').text(finalStats.created);
+                                        $('#stat-updated').text(finalStats.updated);
+                                        $('#stat-drafted').text(finalStats.drafted);
+                                        $('#stat-errors').text(finalStats.errors);
+
+                                        loadLogs();
+
+                                        setTimeout(function() {
+                                            $('#import-progress').fadeOut();
+                                        }, 5000);
+                                    } else {
+                                        $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
+                                        $('#progress-text').text('❌ <?php echo esc_js( __( 'Finalization failed:', 'seminargo' ) ); ?> ' + finalResponse.data);
+                                    }
+                                },
+                                error: function(xhr, status, error) {
+                                    clearInterval(logRefreshInterval);
+                                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+                                    $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
+                                    $('#progress-text').text('❌ <?php echo esc_js( __( 'Finalization failed:', 'seminargo' ) ); ?> ' + error);
+                                    loadLogs();
+                                }
+                            });
+                        }
+
+                        // Start processing first batch
+                        processBatch(0);
                     },
                     error: function(xhr, status, error) {
-                        clearInterval(logRefreshInterval); // Stop auto-refresh
+                        clearInterval(logRefreshInterval);
                         btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
                         $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
-
-                        if (status === 'timeout') {
-                            $('#progress-text').text('⏱️ <?php echo esc_js( __( 'Request timeout - import may still be running. Check logs in a moment.', 'seminargo' ) ); ?>');
-                            // Keep refreshing logs for a bit longer in case import is still running
-                            setTimeout(function() {
-                                loadLogs();
-                            }, 3000);
-                        } else {
-                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Connection failed:', 'seminargo' ) ); ?> ' + error);
-                        }
+                        $('#progress-text').text('❌ <?php echo esc_js( __( 'Initialization failed:', 'seminargo' ) ); ?> ' + error);
+                        loadLogs();
                     }
                 });
             });
@@ -1039,6 +1135,366 @@ class Seminargo_Hotel_Importer {
     public function ajax_clear_logs() {
         delete_option( $this->log_option );
         wp_send_json_success();
+    }
+
+    /**
+     * AJAX handler for starting chunked import
+     * Returns total count and initializes import session
+     */
+    public function ajax_start_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
+        }
+
+        // Clear any existing import session
+        delete_transient( 'seminargo_import_session' );
+
+        // Immediately log that import has been triggered
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        $this->log( 'info', '🚀 Starting chunked hotel import...' );
+        $this->log( 'info', '👤 Triggered by user: ' . wp_get_current_user()->user_login );
+
+        // Memory and execution settings
+        @ini_set( 'max_execution_time', 300 ); // 5 minutes per request
+        @set_time_limit( 300 );
+        @ini_set( 'memory_limit', '512M' );
+
+        $this->log( 'info', '⚙️ Memory limit: ' . ini_get( 'memory_limit' ) . ', Execution time: ' . ini_get( 'max_execution_time' ) . 's' );
+
+        // Log database state BEFORE import
+        global $wpdb;
+        $pre_total = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel'" );
+        $pre_published = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'publish'" );
+        $pre_draft = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'draft'" );
+
+        $this->log( 'info', '📊 PRE-IMPORT: ' . $pre_total . ' total hotels (' . $pre_published . ' published, ' . $pre_draft . ' draft)' );
+
+        // Get total count from API
+        try {
+            $this->log( 'info', '📡 Connecting to API: ' . $this->api_url );
+
+            $query = '{
+                hotelList(skip: 0, limit: 1) {
+                    id
+                }
+            }';
+
+            $response = wp_remote_post( $this->api_url, [
+                'timeout' => 30,
+                'headers' => [ 'Content-Type' => 'application/json' ],
+                'body'    => json_encode( [ 'query' => $query ] ),
+            ] );
+
+            if ( is_wp_error( $response ) ) {
+                throw new Exception( 'API connection failed: ' . $response->get_error_message() );
+            }
+
+            $body = json_decode( wp_remote_retrieve_body( $response ) );
+
+            if ( empty( $body->data->hotelList ) ) {
+                throw new Exception( 'No data received from API' );
+            }
+
+            // For total count, we need to fetch with a large limit or use totalCount field
+            // Since the API doesn't expose totalCount, we'll need to fetch batches until empty
+            // For now, we'll return batch_size and let frontend handle the loop
+            $batch_size = 200;
+
+            // Get existing WordPress hotel IDs for comparison
+            $existing_wp_hotels = $this->get_all_wordpress_hotel_ids();
+
+            // Initialize session data
+            $session = [
+                'batch_size'          => $batch_size,
+                'current_batch'       => 0,
+                'stats'               => [
+                    'created' => 0,
+                    'updated' => 0,
+                    'drafted' => 0,
+                    'errors'  => 0,
+                ],
+                'api_hotel_ids'       => [], // Track all processed hotel IDs
+                'existing_wp_hotels'  => $existing_wp_hotels,
+                'started_at'          => time(),
+            ];
+
+            set_transient( 'seminargo_import_session', $session, HOUR_IN_SECONDS );
+
+            $this->log( 'success', '✅ Import initialized | Batch size: ' . $batch_size . ' | Existing WP hotels: ' . count( $existing_wp_hotels ) );
+
+            wp_send_json_success( [
+                'batch_size'    => $batch_size,
+                'existing_count' => count( $existing_wp_hotels ),
+                'message'       => 'Import initialized successfully',
+            ] );
+
+        } catch ( Exception $e ) {
+            $this->log( 'error', '💥 Failed to initialize import: ' . $e->getMessage() );
+            wp_send_json_error( $e->getMessage() );
+        }
+    }
+
+    /**
+     * AJAX handler for processing a single batch
+     */
+    public function ajax_process_batch() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
+        }
+
+        $batch_number = isset( $_POST['batch'] ) ? intval( $_POST['batch'] ) : 0;
+
+        // Get session data
+        $session = get_transient( 'seminargo_import_session' );
+        if ( ! $session ) {
+            wp_send_json_error( 'Import session expired or not found' );
+        }
+
+        // Memory and execution settings
+        @ini_set( 'max_execution_time', 300 ); // 5 minutes per batch
+        @set_time_limit( 300 );
+        @ini_set( 'memory_limit', '512M' );
+
+        try {
+            $batch_size = $session['batch_size'];
+            $skip = $batch_number * $batch_size;
+
+            $this->log( 'info', '📦 Batch ' . ( $batch_number + 1 ) . ': Processing hotels ' . $skip . '-' . ( $skip + $batch_size ) );
+
+            // Fetch this batch from API
+            $query = '{
+                hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
+                    id
+                    slug
+                    refCode
+                    name
+                    businessName
+                    businessAddress1
+                    businessAddress2
+                    businessAddress3
+                    businessAddress4
+                    businessEmail
+                    businessZip
+                    businessCity
+                    businessCountry
+                    locationLongitude
+                    locationLatitude
+                    distanceToNearestAirport
+                    distanceToNearestRailroadStation
+                    rating
+                    maxCapacityRooms
+                    maxCapacityPeople
+                    hasActivePartnerContract
+                    texts {
+                        id
+                        details
+                        type
+                        language
+                    }
+                    attributes {
+                        id
+                        attribute
+                    }
+                    medias {
+                        id
+                        name
+                        mimeType
+                        width
+                        height
+                        format
+                        path
+                        url
+                        previewUrl
+                    }
+                    integrations {
+                        directBooking
+                    }
+                    spaceId
+                    space {
+                        name
+                    }
+                    meetingRooms {
+                        id
+                        name
+                        area
+                        capacityUForm
+                        capacityTheater
+                        capacityParlament
+                        capacityCircle
+                        capacityBankett
+                        capacityCocktail
+                        capacityBlock
+                        facilityId
+                        facility {
+                            id
+                            sku
+                            name
+                            header
+                            details
+                        }
+                    }
+                    cancellationRules {
+                        id
+                        rule
+                    }
+                }
+            }';
+
+            $response = wp_remote_post( $this->api_url, [
+                'timeout' => 120,
+                'headers' => [ 'Content-Type' => 'application/json' ],
+                'body'    => json_encode( [ 'query' => $query ] ),
+            ] );
+
+            if ( is_wp_error( $response ) ) {
+                throw new Exception( 'API request failed: ' . $response->get_error_message() );
+            }
+
+            $body = json_decode( wp_remote_retrieve_body( $response ) );
+
+            if ( empty( $body->data->hotelList ) ) {
+                // No more hotels, batch is complete
+                $this->log( 'success', '✅ Batch ' . ( $batch_number + 1 ) . ' complete - no more hotels' );
+
+                wp_send_json_success( [
+                    'has_more' => false,
+                    'count'    => 0,
+                    'stats'    => $session['stats'],
+                ] );
+                return;
+            }
+
+            $batch_hotels = $body->data->hotelList;
+            $count = count( $batch_hotels );
+
+            // Process each hotel in this batch
+            foreach ( $batch_hotels as $hotel ) {
+                try {
+                    // Track API hotel ID
+                    $session['api_hotel_ids'][] = strval( $hotel->id );
+
+                    // Process hotel immediately
+                    $result = $this->process_hotel( $hotel );
+                    if ( $result === 'created' ) {
+                        $session['stats']['created']++;
+                    } elseif ( $result === 'updated' ) {
+                        $session['stats']['updated']++;
+                    }
+                } catch ( Exception $e ) {
+                    $this->log( 'error', '❌ Error processing hotel ' . $hotel->businessName . ': ' . $e->getMessage(), $hotel->businessName );
+                    $session['stats']['errors']++;
+                }
+            }
+
+            // Free memory
+            unset( $batch_hotels );
+            if ( function_exists( 'gc_collect_cycles' ) ) {
+                gc_collect_cycles();
+            }
+
+            // Update session
+            $session['current_batch'] = $batch_number;
+            set_transient( 'seminargo_import_session', $session, HOUR_IN_SECONDS );
+
+            $memory_used = round( memory_get_usage() / 1024 / 1024, 2 );
+
+            $this->log( 'success', '✅ Batch ' . ( $batch_number + 1 ) . ' complete | Processed: ' . $count . ' hotels | Created: ' . $session['stats']['created'] . ' | Updated: ' . $session['stats']['updated'] . ' | Errors: ' . $session['stats']['errors'] . ' | Memory: ' . $memory_used . 'MB' );
+
+            wp_send_json_success( [
+                'has_more' => true,
+                'count'    => $count,
+                'stats'    => $session['stats'],
+            ] );
+
+        } catch ( Exception $e ) {
+            $session['stats']['errors']++;
+            set_transient( 'seminargo_import_session', $session, HOUR_IN_SECONDS );
+
+            $this->log( 'error', '💥 Batch ' . ( $batch_number + 1 ) . ' failed: ' . $e->getMessage() );
+            wp_send_json_error( $e->getMessage() );
+        }
+    }
+
+    /**
+     * AJAX handler for finalizing import (drafting hotels not in API)
+     */
+    public function ajax_finalize_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
+        }
+
+        // Get session data
+        $session = get_transient( 'seminargo_import_session' );
+        if ( ! $session ) {
+            wp_send_json_error( 'Import session expired or not found' );
+        }
+
+        try {
+            $this->log( 'info', '🔄 Finalizing import...' );
+
+            // Draft ALL WordPress hotels that are NOT in the API feed
+            $hotels_to_draft = array_diff( $session['existing_wp_hotels'], $session['api_hotel_ids'] );
+
+            if ( ! empty( $hotels_to_draft ) ) {
+                $this->log( 'info', '📝 Drafting ' . count( $hotels_to_draft ) . ' hotels not in API feed' );
+
+                foreach ( $hotels_to_draft as $hotel_id_to_draft ) {
+                    $posts = get_posts( [
+                        'post_type'   => 'hotel',
+                        'post_status' => [ 'publish', 'private', 'pending' ],
+                        'meta_query'  => [
+                            [
+                                'key'   => 'hotel_id',
+                                'value' => $hotel_id_to_draft,
+                            ],
+                        ],
+                        'numberposts' => 1,
+                    ] );
+
+                    if ( ! empty( $posts ) ) {
+                        $post = $posts[0];
+                        if ( $post->post_status !== 'draft' ) {
+                            wp_update_post( [
+                                'ID'          => $post->ID,
+                                'post_status' => 'draft',
+                            ] );
+                            $session['stats']['drafted']++;
+                            $this->log( 'info', '📝 Drafted hotel: ' . $post->post_title, $post->post_title );
+                        }
+                    }
+                }
+            }
+
+            // Calculate duration
+            $duration = time() - $session['started_at'];
+            $minutes = floor( $duration / 60 );
+            $seconds = $duration % 60;
+
+            // Final stats
+            $this->log( 'success', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+            $this->log( 'success', '✅ Import completed in ' . $minutes . 'm ' . $seconds . 's' );
+            $this->log( 'success', '📊 Created: ' . $session['stats']['created'] . ' | Updated: ' . $session['stats']['updated'] . ' | Drafted: ' . $session['stats']['drafted'] . ' | Errors: ' . $session['stats']['errors'] );
+
+            // Log POST-import database state
+            global $wpdb;
+            $post_total = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel'" );
+            $post_published = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'publish'" );
+            $post_draft = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'draft'" );
+
+            $this->log( 'info', '📊 POST-IMPORT: ' . $post_total . ' total hotels (' . $post_published . ' published, ' . $post_draft . ' draft)' );
+
+            // Save final stats
+            update_option( $this->last_import_option, $session['stats'] );
+
+            // Clean up session
+            delete_transient( 'seminargo_import_session' );
+
+            wp_send_json_success( $session['stats'] );
+
+        } catch ( Exception $e ) {
+            $this->log( 'error', '💥 Finalization failed: ' . $e->getMessage() );
+            wp_send_json_error( $e->getMessage() );
+        }
     }
 
     /**
@@ -1261,7 +1717,7 @@ class Seminargo_Hotel_Importer {
                 $memory_used = round( memory_get_usage() / 1024 / 1024, 2 );
                 $memory_limit = ini_get( 'memory_limit' );
 
-                $this->log( 'info', '✅ Batch ' . $batch_number . ' complete | Total processed: ' . $total_fetched . ' | Memory: ' . $memory_used . 'MB / ' . $memory_limit );
+                $this->log( 'success', '✅ Batch ' . $batch_number . ' complete | Total: ' . $total_fetched . ' hotels | Created: ' . $stats['created'] . ' | Updated: ' . $stats['updated'] . ' | Errors: ' . $stats['errors'] . ' | Memory: ' . $memory_used . 'MB' );
 
                 // Reset execution time for next batch
                 @set_time_limit( 300 );
@@ -1403,29 +1859,38 @@ class Seminargo_Hotel_Importer {
     private function get_all_wordpress_hotel_ids() {
         global $wpdb;
 
-        // Get all published hotel posts with hotel_id meta
+        // Get ALL hotel posts with hotel_id meta (ANY status - publish, draft, pending, etc.)
         $results = $wpdb->get_col(
             "SELECT DISTINCT pm.meta_value
              FROM {$wpdb->postmeta} pm
              INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
              WHERE pm.meta_key = 'hotel_id'
              AND p.post_type = 'hotel'
-             AND p.post_status = 'publish'
+             AND p.post_status IN ('publish', 'draft', 'pending', 'private')
              AND pm.meta_value IS NOT NULL
              AND pm.meta_value != ''"
         );
 
-        // Also log the count for debugging
-        $total_hotels = $wpdb->get_var(
-            "SELECT COUNT(*)
-             FROM {$wpdb->posts}
-             WHERE post_type = 'hotel'
-             AND post_status = 'publish'"
+        // Log status breakdown for debugging
+        $status_counts = $wpdb->get_results(
+            "SELECT p.post_status, COUNT(*) as count
+             FROM {$wpdb->posts} p
+             WHERE p.post_type = 'hotel'
+             GROUP BY p.post_status",
+            OBJECT_K
         );
 
+        $status_summary = [];
+        foreach ( $status_counts as $status => $data ) {
+            $status_summary[] = $status . ': ' . $data->count;
+        }
+        $this->log( 'info', '📊 Hotel status breakdown: ' . implode( ', ', $status_summary ) );
+
         $hotels_with_id = count( $results );
+        $total_hotels = array_sum( array_map( function( $s ) { return $s->count; }, $status_counts ) );
+
         if ( $hotels_with_id < $total_hotels ) {
-            $this->log( 'info', '⚠️ Note: ' . $total_hotels . ' published hotels exist, but only ' . $hotels_with_id . ' have hotel_id meta field' );
+            $this->log( 'info', '⚠️ Note: ' . $total_hotels . ' total hotels exist, but only ' . $hotels_with_id . ' have hotel_id meta field' );
         }
 
         return array_map( 'strval', $results );
@@ -1979,12 +2444,39 @@ class Seminargo_Hotel_Importer {
                     // Temporarily allow all image uploads (for import process)
                     add_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
 
-                    // Download and create attachment
-                    $tmp = download_url( $image_url, 30 ); // 30 second timeout
+                    // Download with custom headers to avoid 403 Forbidden
+                    $response = wp_remote_get( $image_url, [
+                        'timeout' => 30,
+                        'headers' => [
+                            'User-Agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . get_bloginfo( 'url' ),
+                            'Referer'    => $this->api_url,
+                        ],
+                        'sslverify' => false, // Dev server may have self-signed cert
+                    ] );
 
-                    if ( is_wp_error( $tmp ) ) {
-                        $error_msg = $tmp->get_error_message();
-                        $this->log( 'error', 'Failed to download image (' . $error_msg . '): ' . $image_url, $hotel->businessName );
+                    if ( is_wp_error( $response ) ) {
+                        $error_msg = $response->get_error_message();
+                        // Just log as info, not error - media server issues shouldn't stop import
+                        $this->log( 'info', 'Skipped image (' . $error_msg . '): ' . basename( $image_url ), $hotel->businessName );
+                        remove_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
+                        continue;
+                    }
+
+                    $response_code = wp_remote_retrieve_response_code( $response );
+                    if ( $response_code !== 200 ) {
+                        // Just log as info - 403/404 from media server shouldn't stop import
+                        $this->log( 'info', 'Skipped image (HTTP ' . $response_code . '): ' . basename( $image_url ), $hotel->businessName );
+                        remove_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
+                        continue;
+                    }
+
+                    // Save to temp file
+                    $tmp = wp_tempnam( $image_url );
+                    $body = wp_remote_retrieve_body( $response );
+                    file_put_contents( $tmp, $body );
+
+                    if ( ! file_exists( $tmp ) || filesize( $tmp ) === 0 ) {
+                        $this->log( 'error', 'Failed to save image to temp file: ' . $image_url, $hotel->businessName );
                         remove_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
                         continue;
                     }
