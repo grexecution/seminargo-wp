@@ -31,6 +31,7 @@ class Seminargo_Hotel_Importer {
         // Cron
         add_action( 'init', [ $this, 'register_cron' ] );
         add_action( 'seminargo_hotels_cron', [ $this, 'run_import' ] );
+        add_action( 'seminargo_hotels_import_now', [ $this, 'run_import' ] );
 
         // Register hotel post type if not exists
         add_action( 'init', [ $this, 'register_post_type' ] );
@@ -1006,8 +1007,17 @@ class Seminargo_Hotel_Importer {
         // Immediately log that import has been triggered
         $this->log( 'info', '👤 Import triggered by user: ' . wp_get_current_user()->user_login );
 
-        $result = $this->run_import();
-        wp_send_json_success( $result );
+        // Spawn import in background to avoid AJAX timeout
+        wp_schedule_single_event( time(), 'seminargo_hotels_import_now' );
+
+        // Trigger WP Cron immediately (non-blocking)
+        spawn_cron();
+
+        // Return immediately
+        wp_send_json_success( [
+            'message' => __( 'Import started in background', 'seminargo' ),
+            'started' => true
+        ] );
     }
 
     /**
@@ -1885,6 +1895,22 @@ class Seminargo_Hotel_Importer {
                     continue;
                 }
 
+                // URL-encode the path component to handle spaces and special characters
+                $parsed_url = parse_url( $image_url );
+                if ( isset( $parsed_url['path'] ) ) {
+                    // Encode each path segment while preserving slashes
+                    $path_parts = explode( '/', $parsed_url['path'] );
+                    $encoded_parts = array_map( 'rawurlencode', $path_parts );
+                    $parsed_url['path'] = implode( '/', $encoded_parts );
+
+                    // Rebuild the URL
+                    $image_url = ( isset( $parsed_url['scheme'] ) ? $parsed_url['scheme'] . '://' : '' );
+                    $image_url .= ( isset( $parsed_url['host'] ) ? $parsed_url['host'] : '' );
+                    $image_url .= ( isset( $parsed_url['port'] ) ? ':' . $parsed_url['port'] : '' );
+                    $image_url .= $parsed_url['path'];
+                    $image_url .= ( isset( $parsed_url['query'] ) ? '?' . $parsed_url['query'] : '' );
+                }
+
                 $image_name = basename( $media->url ?? $media->path );
 
                 // Replace spaces with hyphens
@@ -1933,10 +1959,11 @@ class Seminargo_Hotel_Importer {
                     add_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
 
                     // Download and create attachment
-                    $tmp = download_url( $image_url );
+                    $tmp = download_url( $image_url, 30 ); // 30 second timeout
 
                     if ( is_wp_error( $tmp ) ) {
-                        $this->log( 'error', 'Failed to download image: ' . $image_url, $hotel->businessName );
+                        $error_msg = $tmp->get_error_message();
+                        $this->log( 'error', 'Failed to download image (' . $error_msg . '): ' . $image_url, $hotel->businessName );
                         remove_filter( 'upload_mimes', [ $this, 'allow_image_mimes' ], 999 );
                         continue;
                     }
