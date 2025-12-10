@@ -239,7 +239,7 @@ while ( have_posts() ) : the_post();
                                 <h1 class="hotel-title">
                                     <?php the_title(); ?>
                                     <?php if ( $hotel_data['stars'] > 0 ) : ?>
-                                        <span class="hotel-stars-text"><?php echo esc_html( $hotel_data['stars'] ); ?>S</span>
+                                        <span class="hotel-stars-text"><?php echo esc_html( $hotel_data['stars'] ); ?>★</span>
                                     <?php endif; ?>
                                 </h1>
                                 <div class="hotel-address-header">
@@ -938,6 +938,7 @@ while ( have_posts() ) : the_post();
                             'rating'    => floatval( get_post_meta( $similar_id, 'rating', true ) ),
                             'rooms'     => intval( get_post_meta( $similar_id, 'rooms', true ) ),
                             'capacity'  => intval( get_post_meta( $similar_id, 'capacity', true ) ),
+                            'bedrooms'  => intval( get_post_meta( $similar_id, 'max_capacity_rooms', true ) ),
                         );
 
                         get_template_part( 'template-parts/hotel-card', null, $similar_hotel_data );
@@ -996,24 +997,7 @@ while ( have_posts() ) : the_post();
         </section>
 
         <!-- Call to Action Section -->
-        <section class="hotel-cta">
-            <div class="container">
-                <div class="cta-content">
-                    <div class="cta-text">
-                        <h2><?php esc_html_e( 'Noch nicht das Richtige gefunden?', 'seminargo' ); ?></h2>
-                        <p><?php esc_html_e( 'Entdecken Sie weitere Seminarhotels in Deutschland und Österreich', 'seminargo' ); ?></p>
-                    </div>
-                    <div class="cta-actions">
-                        <a href="<?php echo esc_url( home_url( '/seminarhotels' ) ); ?>" class="btn-cta-primary">
-                            <?php esc_html_e( 'Alle Hotels durchsuchen', 'seminargo' ); ?>
-                        </a>
-                        <a href="<?php echo esc_url( home_url( '/kontakt' ) ); ?>" class="btn-cta-secondary">
-                            <?php esc_html_e( 'Persönliche Beratung', 'seminargo' ); ?>
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </section>
+        <?php seminargo_cta_section(); ?>
 
     </main>
 </div>

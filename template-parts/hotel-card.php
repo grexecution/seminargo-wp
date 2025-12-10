@@ -15,38 +15,19 @@ $hotel = $args;
         <div class="hotel-card-image">
             <img src="<?php echo esc_url( $hotel['image'] ); ?>" alt="<?php echo esc_attr( $hotel['title'] ); ?>" loading="lazy">
 
-            <!-- Rating Badge (top-left) -->
-            <?php if ( ! empty( $hotel['rating'] ) && $hotel['rating'] > 0 ) :
-                $rating_out_of_10 = floatval( $hotel['rating'] );
-                $rating_out_of_5 = $rating_out_of_10 / 2;
-                $full_rating_stars = floor( $rating_out_of_5 );
-                $partial_fill = ( $rating_out_of_5 - $full_rating_stars ) * 100;
-                $empty_stars = 5 - ceil( $rating_out_of_5 );
-            ?>
-                <div class="hotel-rating-badge">
-                    <div class="rating-stars-container">
-                        <?php for ( $i = 0; $i < $full_rating_stars; $i++ ) : ?>
-                            <span class="star full">★</span>
-                        <?php endfor; ?>
-                        <?php if ( $partial_fill > 0 && $full_rating_stars < 5 ) : ?>
-                            <span class="star partial" style="--fill-percent: <?php echo $partial_fill; ?>%;">★</span>
-                        <?php endif; ?>
-                        <?php for ( $i = 0; $i < $empty_stars; $i++ ) : ?>
-                            <span class="star empty">★</span>
-                        <?php endfor; ?>
-                    </div>
-                    <span class="rating-score"><?php echo number_format( $rating_out_of_10, 1 ); ?>/10</span>
-                </div>
+            <!-- Hotel Stars Badge (top-left) - Category like 4★, 5★ -->
+            <?php if ( ! empty( $hotel['stars'] ) && $hotel['stars'] > 0 ) : ?>
+                <span class="hotel-rating-badge"><?php echo esc_html( $hotel['stars'] ); ?>★</span>
             <?php endif; ?>
 
-            <!-- Featured Badge (if applicable) -->
-            <?php if ( ! empty( $hotel['featured'] ) ) : ?>
-                <div class="hotel-featured-badge">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            <!-- Review Rating Badge (top-right) -->
+            <?php if ( ! empty( $hotel['rating'] ) && $hotel['rating'] > 0 ) : ?>
+                <span class="hotel-review-badge">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                     </svg>
-                    <?php esc_html_e( 'Top', 'seminargo' ); ?>
-                </div>
+                    <?php echo number_format( $hotel['rating'], 1 ); ?>
+                </span>
             <?php endif; ?>
         </div>
 
@@ -57,9 +38,6 @@ $hotel = $args;
             <div class="hotel-header">
                 <h3 class="hotel-title">
                     <?php echo esc_html( $hotel['title'] ); ?>
-                    <?php if ( ! empty( $hotel['stars'] ) && $hotel['stars'] > 0 ) : ?>
-                        <span class="hotel-stars-text"><?php echo esc_html( $hotel['stars'] ); ?>S</span>
-                    <?php endif; ?>
                 </h3>
                 <div class="hotel-location">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

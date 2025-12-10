@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Seminargo_Hotel_Importer {
 
-    private $api_url = 'https://dev.seminargo.eu/pricelist/graphql';
+    private $api_url = 'https://finder.dev.seminargo.eu/pricelist/graphql';
     private $shop_url = 'https://finder.dev.seminargo.eu/hotels/';
     private $log_option = 'seminargo_hotels_import_log';
     private $last_import_option = 'seminargo_hotels_last_import';
@@ -1202,19 +1202,20 @@ class Seminargo_Hotel_Importer {
             if ( $batch_count === 0 ) {
                 // No more hotels to fetch
                 $has_more = false;
+                $this->log( 'info', '📭 No more hotels available from API - stopping pagination' );
             } else {
                 // Add to collection
                 $all_hotels = array_merge( $all_hotels, $batch_hotels );
-                $skip += $batch_size;
 
-                // If we got fewer hotels than the batch size, we're done
-                if ( $batch_count < $batch_size ) {
-                    $has_more = false;
-                }
+                // Increment skip by actual count received (API may have per-request limits)
+                $old_skip = $skip;
+                $skip += $batch_count;
+
+                $this->log( 'info', '➡️ Continuing pagination: next skip=' . $skip . ' (received ' . $batch_count . ' hotels, total so far: ' . count( $all_hotels ) . ')' );
             }
         }
 
-        $this->log( 'info', '✅ Total hotels fetched: ' . count( $all_hotels ) );
+        $this->log( 'info', '✅ Total hotels fetched from all batches: ' . count( $all_hotels ) );
         return $all_hotels;
     }
 
@@ -1239,6 +1240,22 @@ class Seminargo_Hotel_Importer {
             'errors'  => 0,
             'time'    => time(),
         ];
+
+        // Log database state BEFORE import
+        global $wpdb;
+        $pre_total = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel'" );
+        $pre_published = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'publish'" );
+        $pre_draft = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'draft'" );
+        $pre_unique_ids = $wpdb->get_var( "SELECT COUNT(DISTINCT meta_value) FROM {$wpdb->postmeta} WHERE meta_key = 'hotel_id' AND meta_value != ''" );
+        $pre_posts_with_id = $wpdb->get_var( "SELECT COUNT(DISTINCT post_id) FROM {$wpdb->postmeta} WHERE meta_key = 'hotel_id'" );
+
+        $this->log( 'info', '📊 PRE-IMPORT: ' . $pre_total . ' total hotels (' . $pre_published . ' published, ' . $pre_draft . ' draft)' );
+        $this->log( 'info', '📊 Unique hotel_id values: ' . $pre_unique_ids . ', Posts with hotel_id: ' . $pre_posts_with_id );
+
+        if ( $pre_posts_with_id > $pre_unique_ids ) {
+            $duplicate_count = $pre_posts_with_id - $pre_unique_ids;
+            $this->log( 'error', '⚠️ DUPLICATES EXIST: ' . $duplicate_count . ' duplicate hotel posts found in database!' );
+        }
 
         $this->log( 'info', '📡 Connecting to API endpoint: ' . $this->api_url );
         $this->log( 'info', '⏳ Fetching hotels from API (this may take 1-2 minutes)...' );
@@ -1306,22 +1323,21 @@ class Seminargo_Hotel_Importer {
                 $sample_draft_ids = array_slice( $hotels_to_draft, 0, 20 );
                 $this->log( 'info', '📋 Sample hotel IDs to draft: ' . implode( ', ', $sample_draft_ids ) . ( $draft_count > 20 ? ' (+' . ( $draft_count - 20 ) . ' more)' : '' ) );
 
-                // SAFETY CHECK: If more than 50% of hotels would be drafted, require confirmation
+                // Log drafting statistics
                 $wp_hotel_count = count( $existing_wp_hotels );
                 $draft_percentage = $wp_hotel_count > 0 ? round( ( $draft_count / $wp_hotel_count ) * 100 ) : 0;
 
-                if ( $draft_count > 50 && $draft_percentage > 50 ) {
-                    $this->log( 'error', '⚠️ SAFETY WARNING: ' . $draft_count . ' hotels (' . $draft_percentage . '%) would be drafted!' );
-                    $this->log( 'error', '⚠️ This suggests the API might be returning incomplete data or using wrong endpoint' );
-                    $this->log( 'error', '⚠️ Current API: ' . $this->api_url . ' returned only ' . count( $api_hotel_ids ) . ' hotels' );
-                    $this->log( 'error', '⚠️ Skipping mass draft to prevent data loss. Please verify API endpoint.' );
-                } else {
-                    // Safe to proceed with drafting
-                    foreach ( $hotels_to_draft as $wp_hotel_id ) {
-                        $drafted = $this->draft_removed_hotel( $wp_hotel_id );
-                        if ( $drafted ) {
-                            $stats['drafted']++;
-                        }
+                // Always log if drafting a significant number
+                if ( $draft_count > 50 ) {
+                    $this->log( 'info', '📊 Drafting ' . $draft_count . ' hotels (' . $draft_percentage . '%) not found in API' );
+                    $this->log( 'info', '📊 API returned ' . count( $api_hotel_ids ) . ' hotels, WordPress has ' . $wp_hotel_count . ' hotels' );
+                }
+
+                // Proceed with drafting - only these hotels from API should be live
+                foreach ( $hotels_to_draft as $wp_hotel_id ) {
+                    $drafted = $this->draft_removed_hotel( $wp_hotel_id );
+                    if ( $drafted ) {
+                        $stats['drafted']++;
                     }
                 }
             } else {
@@ -1330,6 +1346,14 @@ class Seminargo_Hotel_Importer {
 
             // Save current API hotel IDs for reference
             update_option( $this->imported_ids_option, $api_hotel_ids );
+
+            // Log database state AFTER import
+            $post_total = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel'" );
+            $post_published = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'publish'" );
+            $post_draft = $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'hotel' AND post_status = 'draft'" );
+
+            $this->log( 'info', '📊 POST-IMPORT: ' . $post_total . ' total hotels (' . $post_published . ' published, ' . $post_draft . ' draft)' );
+            $this->log( 'info', '📊 CHANGE: ' . ( $post_total - $pre_total ) . ' total, ' . ( $post_published - $pre_published ) . ' published, ' . ( $post_draft - $pre_draft ) . ' draft' );
 
             $this->log( 'success', '✅ Import completed: ' . $stats['created'] . ' created, ' . $stats['updated'] . ' updated, ' . $stats['drafted'] . ' drafted, ' . $stats['errors'] . ' errors' );
 
@@ -1411,22 +1435,34 @@ class Seminargo_Hotel_Importer {
      * Process a single hotel
      */
     private function process_hotel( $hotel ) {
-        // Check if hotel exists
+        // Check if hotel exists - search DRAFTS FIRST, then published
+        // Priority: Draft > Published > Create New
         $args = [
             'post_type'      => 'hotel',
-            'post_status'    => [ 'publish', 'draft' ],
+            'post_status'    => [ 'draft', 'publish' ],
             'meta_query'     => [
                 [
                     'key'   => 'hotel_id',
                     'value' => $hotel->id,
                 ],
             ],
-            'posts_per_page' => 1,
+            'posts_per_page' => -1, // Get ALL matches to detect duplicates
+            'orderby'        => 'post_status', // Draft posts first
+            'order'          => 'DESC',
         ];
 
         $query = new WP_Query( $args );
         $is_new = ! $query->have_posts();
         $post_id = null;
+
+        // CRITICAL: Check for duplicates
+        if ( $query->post_count > 1 ) {
+            $this->log( 'error', '⚠️ DUPLICATE DETECTED: Hotel ID ' . $hotel->id . ' has ' . $query->post_count . ' posts!', $hotel->businessName );
+            foreach ( $query->posts as $duplicate_post ) {
+                $this->log( 'error', '   - Post #' . $duplicate_post->ID . ': ' . $duplicate_post->post_title . ' (' . $duplicate_post->post_status . ')', $hotel->businessName );
+            }
+            // Use the first one (preferring draft status due to orderby)
+        }
 
         // Prepare content
         $content = '';
@@ -1441,6 +1477,12 @@ class Seminargo_Hotel_Importer {
             if ( empty( $content ) && ! empty( $hotel->texts[0]->details ) ) {
                 $content = $hotel->texts[0]->details;
             }
+        }
+
+        // Sanitize content to fix broken HTML and remove unwanted links
+        if ( ! empty( $content ) ) {
+            // Remove broken/unclosed anchor tags that cause rendering issues
+            $content = $this->sanitize_hotel_description( $content );
         }
 
         // Use 'name' for display, fallback to 'businessName' if name is empty
@@ -1476,48 +1518,39 @@ class Seminargo_Hotel_Importer {
             return 'created';
 
         } else {
-            // Update existing hotel
+            // Update existing hotel (found in drafts or published)
             $post = $query->posts[0];
             $post_id = $post->ID;
-            $has_changes = false;
+            $old_status = $post->post_status;
 
-            // Check and update title
-            if ( $post->post_title !== $hotel_title ) {
-                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'title', $post->post_title, $hotel_title );
-                $has_changes = true;
+            // Log what we're doing
+            if ( $old_status === 'draft' ) {
+                $this->log( 'info', '♻️ Reusing draft post #' . $post_id . ' for hotel: ' . $hotel_title, $hotel_title );
+            } else {
+                $this->log( 'info', '🔄 Updating existing hotel #' . $post_id . ': ' . $hotel_title, $hotel_title );
             }
 
-            // Check and update slug
-            if ( $post->post_name !== $wp_slug ) {
-                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'slug', $post->post_name, $wp_slug );
-                $has_changes = true;
+            // COMPLETELY OVERWRITE post data (always, not just on changes)
+            wp_update_post( [
+                'ID'           => $post_id,
+                'post_title'   => $hotel_title,
+                'post_name'    => $wp_slug,
+                'post_content' => $content,
+                'post_status'  => 'publish', // Always publish when in API
+            ] );
+
+            // COMPLETELY OVERWRITE all meta fields (force overwrite)
+            $this->update_hotel_meta( $post_id, $hotel, true );
+
+            // COMPLETELY OVERWRITE images
+            $this->process_hotel_images( $post_id, $hotel );
+
+            // Log if we're republishing a draft
+            if ( $old_status === 'draft' ) {
+                $this->log( 'success', '✅ Republished draft hotel: ' . $hotel_title, $hotel_title );
             }
 
-            // Check and update content
-            if ( $post->post_content !== $content ) {
-                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'content', substr( $post->post_content, 0, 50 ) . '...', substr( $content, 0, 50 ) . '...' );
-                $has_changes = true;
-            }
-
-            // Update post if changed
-            if ( $has_changes || $post->post_status === 'draft' ) {
-                wp_update_post( [
-                    'ID'           => $post_id,
-                    'post_title'   => $hotel_title,
-                    'post_name'    => $wp_slug,
-                    'post_content' => $content,
-                    'post_status'  => 'publish',
-                ] );
-            }
-
-            // Update meta fields and check for changes
-            $meta_changed = $this->update_hotel_meta( $post_id, $hotel, false );
-
-            if ( $has_changes || $meta_changed ) {
-                return 'updated';
-            }
-
-            return 'unchanged';
+            return 'updated';
         }
     }
 
@@ -1706,6 +1739,11 @@ class Seminargo_Hotel_Importer {
             }
         }
 
+        // Sanitize hotel description to fix broken HTML from API
+        if ( ! empty( $result['HOTEL_DESCRIPTION'] ) ) {
+            $result['HOTEL_DESCRIPTION'] = $this->sanitize_hotel_description( $result['HOTEL_DESCRIPTION'] );
+        }
+
         return $result;
     }
 
@@ -1768,6 +1806,61 @@ class Seminargo_Hotel_Importer {
         }
 
         return $amenities;
+    }
+
+    /**
+     * Sanitize hotel description to fix broken HTML
+     *
+     * @param string $content Raw HTML content from API
+     * @return string Sanitized content
+     */
+    private function sanitize_hotel_description( $content ) {
+        if ( empty( $content ) ) {
+            return '';
+        }
+
+        // Remove paragraphs that only contain empty or broken anchor tags
+        // Pattern: <p><a href="..."></p> (no closing </a> tag)
+        $content = preg_replace( '/<p[^>]*>\s*<a[^>]*>\s*<\/p>/i', '', $content );
+
+        // Remove standalone broken anchor tags (opening tag with no closing tag and no content)
+        // This is a simple approach: remove any <a> tag that's immediately followed by </p> without content
+        $content = preg_replace( '/<a[^>]*>\s*<\/p>/i', '</p>', $content );
+
+        // Remove any remaining empty anchor tags
+        $content = preg_replace( '/<a[^>]*><\/a>/i', '', $content );
+
+        // Use DOMDocument for robust HTML parsing and fixing
+        if ( class_exists( 'DOMDocument' ) ) {
+            libxml_use_internal_errors( true ); // Suppress HTML parsing warnings
+
+            $dom = new DOMDocument();
+            $dom->loadHTML( '<?xml encoding="UTF-8">' . $content, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+
+            // Find and remove all empty or broken anchor tags
+            $xpath = new DOMXPath( $dom );
+            $links = $xpath->query( '//a[not(node())]' ); // Anchors with no content
+
+            foreach ( $links as $link ) {
+                $link->parentNode->removeChild( $link );
+            }
+
+            // Get the cleaned HTML
+            $content = $dom->saveHTML();
+
+            // Remove the XML encoding tag we added
+            $content = str_replace( '<?xml encoding="UTF-8">', '', $content );
+
+            libxml_clear_errors();
+        }
+
+        // Use WordPress function to sanitize HTML and fix malformed tags
+        $content = wp_kses_post( $content );
+
+        // Balance any remaining unclosed tags
+        $content = force_balance_tags( $content );
+
+        return $content;
     }
 
     /**

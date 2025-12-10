@@ -136,12 +136,71 @@ get_header(); ?>
                     <span class="section-tagline">Unsere Empfehlungen</span>
                     <h2 class="section-title">Entdecken Sie unsere Top-Veranstaltungsorte</h2>
                 </div>
+
+                <!-- Filter Tabs -->
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="top">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                        Top Hotels
+                    </button>
+                    <button class="filter-tab" data-filter="theme">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="9" x2="15" y2="9"></line>
+                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                        </svg>
+                        Nach Thema
+                    </button>
+                    <button class="filter-tab" data-filter="location">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        Nach Region
+                    </button>
+                </div>
+
+                <!-- Filter Options -->
+                <div class="filter-options">
+                    <!-- Top Hotels Filter (Hidden by default) -->
+                    <div class="filter-option-group" data-filter-group="top">
+                        <p class="filter-description">Unsere handverlesenen Top-Veranstaltungsorte</p>
+                    </div>
+
+                    <!-- Theme Filter -->
+                    <div class="filter-option-group" data-filter-group="theme">
+                        <div class="filter-buttons">
+                            <button class="filter-button active" data-theme="all">Alle Themen</button>
+                            <button class="filter-button" data-theme="seminar">Seminar</button>
+                            <button class="filter-button" data-theme="tagung">Tagung</button>
+                            <button class="filter-button" data-theme="spa">Spa & Wellness</button>
+                            <button class="filter-button" data-theme="konferenz">Konferenz</button>
+                            <button class="filter-button" data-theme="incentive">Incentive</button>
+                        </div>
+                    </div>
+
+                    <!-- Location Filter -->
+                    <div class="filter-option-group" data-filter-group="location">
+                        <div class="filter-buttons">
+                            <button class="filter-button active" data-location="all">Alle Regionen</button>
+                            <button class="filter-button" data-location="wien">Wien</button>
+                            <button class="filter-button" data-location="salzburg">Salzburg</button>
+                            <button class="filter-button" data-location="tirol">Tirol</button>
+                            <button class="filter-button" data-location="steiermark">Steiermark</button>
+                            <button class="filter-button" data-location="kärnten">Kärnten</button>
+                            <button class="filter-button" data-location="oberösterreich">Oberösterreich</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="hotels-grid">
                     <?php
                     // Query featured hotels from WordPress (only those marked for landing page)
                     $featured_hotels = new WP_Query( array(
                         'post_type'      => 'hotel',
-                        'posts_per_page' => 6,
+                        'posts_per_page' => 9,
                         'orderby'        => 'rand',
                         'post_status'    => 'publish',
                         'meta_query'     => array(
@@ -172,19 +231,28 @@ get_header(); ?>
                             $capacity = intval( get_post_meta( get_the_ID(), 'capacity', true ) );
                             $bedrooms = intval( get_post_meta( get_the_ID(), 'bedrooms', true ) );
                             $stars = floatval( get_post_meta( get_the_ID(), 'stars', true ) );
+                            $rating = floatval( get_post_meta( get_the_ID(), 'rating', true ) );
 
                     ?>
-                        <div class="hotel-card featured-hotel-card">
+                        <div class="hotel-card featured-hotel-card" data-location="<?php echo esc_attr( strtolower( $location ) ); ?>">
                             <a href="<?php echo esc_url( get_permalink() ); ?>">
                                 <div class="hotel-image">
                                     <img src="<?php echo esc_url( $hotel_image ); ?>" alt="<?php echo esc_attr( get_the_title() ); ?>" loading="lazy">
+                                    <?php if ( $stars > 0 ) : ?>
+                                        <span class="hotel-rating-badge"><?php echo esc_html( $stars ); ?>★</span>
+                                    <?php endif; ?>
+                                    <?php if ( $rating > 0 ) : ?>
+                                        <span class="hotel-review-badge">
+                                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                                            </svg>
+                                            <?php echo number_format( $rating, 1 ); ?>
+                                        </span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="hotel-content">
                                     <h3 class="hotel-title">
                                         <?php the_title(); ?>
-                                        <?php if ( $stars > 0 ) : ?>
-                                            <span class="hotel-stars-text"><?php echo esc_html( $stars ); ?>S</span>
-                                        <?php endif; ?>
                                     </h3>
                                     <?php if ( $location ) : ?>
                                         <p class="hotel-location">
@@ -363,31 +431,7 @@ get_header(); ?>
         </section>
 
         <!-- Location Finder CTA Section -->
-        <section class="location-finder-cta">
-            <div class="container">
-                <div class="cta-content">
-                    <div class="cta-text">
-                        <h2>Kostenlose Beratung für Ihre perfekte Location</h2>
-                        <p>Sparen Sie Zeit und Nerven – unser Expertenteam findet für Sie die ideale Location. Persönliche Beratung, maßgeschneiderte Vorschläge, 100% kostenfrei.</p>
-                    </div>
-                    <div class="cta-actions">
-                        <a href="tel:+4312345678" class="button button-white">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-                            </svg>
-                            Jetzt anrufen
-                        </a>
-                        <a href="mailto:info@seminargo.com" class="button button-outline-white">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                                <polyline points="22,6 12,13 2,6"></polyline>
-                            </svg>
-                            E-Mail senden
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </section>
+        <?php seminargo_cta_section(); ?>
 
         <!-- SEO Content Section -->
         <section class="seo-content-section">
@@ -413,7 +457,7 @@ get_header(); ?>
                     </div>
 
                     <div class="trust-signals">
-                        <p class="trust-text">Vertraut von führenden Unternehmen wie Accor Hotels, Austria Trend, Allianz, dm und T-Mobile. Support-Team verfügbar Mo-Do 8-18 Uhr, Fr 8-14 Uhr in unseren Büros in München und Wien.</p>
+                        <p class="trust-text">Support-Team verfügbar Mo-Do 8-18 Uhr, Fr 8-14 Uhr in unseren Büros in München und Wien.</p>
                     </div>
                 </div>
             </div>

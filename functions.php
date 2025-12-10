@@ -207,6 +207,17 @@ function seminargo_scripts() {
         );
     }
 
+    // Hotel filters script (only on front page)
+    if ( is_front_page() ) {
+        wp_enqueue_script(
+            'seminargo-hotel-filters',
+            SEMINARGO_ASSETS_URL . 'js/hotel-filters.js',
+            array(),
+            SEMINARGO_VERSION,
+            true
+        );
+    }
+
     // Localize script for AJAX
     wp_localize_script( 'seminargo-main', 'seminargo_ajax', array(
         'ajax_url' => admin_url( 'admin-ajax.php' ),
@@ -413,3 +424,29 @@ function seminargo_remove_mine_filter( $views ) {
     return $views;
 }
 add_filter( 'views_edit-hotel', 'seminargo_remove_mine_filter' );
+
+/**
+ * Output CTA Section with static content
+ */
+function seminargo_cta_section() {
+    get_template_part( 'template-parts/cta-section', null, [
+        'eyebrow' => 'Schnell · Persönlich · Kostenlos',
+        'heading' => 'Ihre Traum-Location in 24 Stunden',
+        'description' => 'Unsere Experten kennen jede Location persönlich. Sie sagen uns, was Sie brauchen – wir liefern maßgeschneiderte Empfehlungen. Professionell, schnell und 100% kostenfrei.',
+        'buttons' => [
+            [
+                'text' => 'Sofort Anrufen',
+                'url' => 'tel:+4312345678',
+                'icon' => 'phone',
+                'style' => 'white'
+            ],
+            [
+                'text' => 'Beratung anfragen',
+                'url' => 'mailto:info@seminargo.com',
+                'icon' => 'email',
+                'style' => 'outline-white'
+            ]
+        ],
+        'style' => 'gradient'
+    ] );
+}

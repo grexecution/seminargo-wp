@@ -23,7 +23,11 @@
       "Bash(grep:*)",
       "Bash(done)",
       "WebFetch(domain:github.com)",
-      "Bash(/Users/gregorwallner/.local/bin/wp post meta get:*)"
+      "Bash(/Users/gregorwallner/.local/bin/wp post meta get:*)",
+      "Bash(php -r:*)",
+      "Bash(for commit in b9feb8e fd12e80 d99777d 26d520b 93ded6f a3c8239)",
+      "Bash(do echo '=== Commit $commit ===')",
+      "Bash(php:*)"
     ],
     "deny": [],
     "ask": []
