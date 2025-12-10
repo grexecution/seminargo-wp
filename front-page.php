@@ -197,7 +197,7 @@ get_header(); ?>
 
                 <div class="hotels-grid">
                     <?php
-                    // Query featured hotels from WordPress (only those marked for landing page)
+                    // Query featured hotels from WordPress (only those marked for homepage)
                     $featured_hotels = new WP_Query( array(
                         'post_type'      => 'hotel',
                         'posts_per_page' => 9,

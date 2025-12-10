@@ -99,41 +99,54 @@
                     'menu_id'         => 'mobile-menu',
                     'container_class' => 'mobile-menu-container',
                     'menu_class'      => 'mobile-menu',
+                    'walker'          => new Seminargo_Mobile_Menu_Walker(),
                     'fallback_cb'     => false,
                 ) );
                 ?>
 
-                <!-- Mobile Icon Navigation -->
-                <div class="mobile-icon-nav">
-                    <ul class="mobile-icon-list">
-                        <li class="mobile-icon-item">
-                            <a href="#" class="mobile-icon-link">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                    <circle cx="12" cy="10" r="3"></circle>
-                                </svg>
-                                <span><?php esc_html_e( 'Standorte', 'seminargo' ); ?></span>
-                            </a>
-                        </li>
-                        <li class="mobile-icon-item">
-                            <a href="#" class="mobile-icon-link">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                                    <line x1="3" y1="10" x2="21" y2="10"></line>
-                                </svg>
-                                <span><?php esc_html_e( 'Veranstaltungen', 'seminargo' ); ?></span>
-                            </a>
-                        </li>
-                    </ul>
+                <!-- Help & Support Section -->
+                <div class="mobile-support-section">
+                    <div class="support-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        <h3><?php esc_html_e( 'Hilfe & Support', 'seminargo' ); ?></h3>
+                    </div>
+                    <p class="support-text"><?php esc_html_e( 'Unser Team steht Ihnen gerne zur Verfügung', 'seminargo' ); ?></p>
+                    <div class="support-actions">
+                        <a href="tel:+43123456789" class="support-link">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                            <span><?php esc_html_e( 'Anrufen', 'seminargo' ); ?></span>
+                        </a>
+                        <a href="mailto:info@seminargo.com" class="support-link">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                            <span><?php esc_html_e( 'E-Mail', 'seminargo' ); ?></span>
+                        </a>
+                    </div>
                 </div>
 
-                <!-- Mobile CTA Button -->
-                <div class="mobile-cta">
-                    <button class="btn-cta-primary btn-block">
-                        <?php esc_html_e( 'Angebot anfragen', 'seminargo' ); ?>
-                    </button>
+                <!-- Trust Badges -->
+                <div class="mobile-trust-badges">
+                    <div class="trust-badge">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            <polyline points="9 12 11 14 15 10"></polyline>
+                        </svg>
+                        <span><?php esc_html_e( 'Geprüfte Hotels', 'seminargo' ); ?></span>
+                    </div>
+                    <div class="trust-badge">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                        <span><?php esc_html_e( 'Top-Bewertungen', 'seminargo' ); ?></span>
+                    </div>
                 </div>
             </div>
         </div>
