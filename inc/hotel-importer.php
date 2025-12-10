@@ -921,31 +921,58 @@ class Seminargo_Hotel_Importer {
                 $('#progress-bar').css('width', '10%');
                 $('#progress-text').text('<?php echo esc_js( __( 'Connecting to API...', 'seminargo' ) ); ?>');
 
-                $.post(ajaxurl, { action: 'seminargo_fetch_hotels' }, function(response) {
-                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+                // Auto-refresh logs every 2 seconds during import for live updates
+                var logRefreshInterval = setInterval(function() {
+                    loadLogs();
+                    $('#progress-bar').css('width', '50%'); // Show activity
+                }, 2000);
 
-                    if (response.success) {
-                        $('#progress-bar').css('width', '100%');
-                        $('#progress-text').text('✅ <?php echo esc_js( __( 'Import completed!', 'seminargo' ) ); ?>');
+                // Immediate first refresh
+                setTimeout(function() { loadLogs(); }, 500);
 
-                        $('#stat-created').text(response.data.created);
-                        $('#stat-updated').text(response.data.updated);
-                        $('#stat-drafted').text(response.data.drafted);
-                        $('#stat-errors').text(response.data.errors);
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: { action: 'seminargo_fetch_hotels' },
+                    timeout: 600000, // 10 minutes timeout for large imports
+                    success: function(response) {
+                        clearInterval(logRefreshInterval); // Stop auto-refresh
+                        btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
 
-                        loadLogs();
+                        if (response.success) {
+                            $('#progress-bar').css('width', '100%');
+                            $('#progress-text').text('✅ <?php echo esc_js( __( 'Import completed!', 'seminargo' ) ); ?>');
 
-                        setTimeout(function() {
-                            $('#import-progress').fadeOut();
-                        }, 3000);
-                    } else {
+                            $('#stat-created').text(response.data.created);
+                            $('#stat-updated').text(response.data.updated);
+                            $('#stat-drafted').text(response.data.drafted);
+                            $('#stat-errors').text(response.data.errors);
+
+                            loadLogs();
+
+                            setTimeout(function() {
+                                $('#import-progress').fadeOut();
+                            }, 3000);
+                        } else {
+                            $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
+                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Error:', 'seminargo' ) ); ?> ' + response.data);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        clearInterval(logRefreshInterval); // Stop auto-refresh
+                        btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
                         $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
-                        $('#progress-text').text('❌ <?php echo esc_js( __( 'Error:', 'seminargo' ) ); ?> ' + response.data);
+
+                        if (status === 'timeout') {
+                            $('#progress-text').text('⏱️ <?php echo esc_js( __( 'Request timeout - import may still be running. Check logs in a moment.', 'seminargo' ) ); ?>');
+                            // Keep refreshing logs for a bit longer in case import is still running
+                            setTimeout(function() {
+                                loadLogs();
+                            }, 3000);
+                        } else {
+                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Connection failed:', 'seminargo' ) ); ?> ' + error);
+                        }
                     }
-                }).fail(function() {
-                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
-                    $('#progress-bar').css('background', '#ff6b6b');
-                    $('#progress-text').text('❌ <?php echo esc_js( __( 'Connection failed', 'seminargo' ) ); ?>');
                 });
             });
 
@@ -975,6 +1002,9 @@ class Seminargo_Hotel_Importer {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
         }
+
+        // Immediately log that import has been triggered
+        $this->log( 'info', '👤 Import triggered by user: ' . wp_get_current_user()->user_login );
 
         $result = $this->run_import();
         wp_send_json_success( $result );
@@ -1028,7 +1058,15 @@ class Seminargo_Hotel_Importer {
             $logs = array_slice( $logs, -500 );
         }
 
-        update_option( $this->log_option, $logs );
+        update_option( $this->log_option, $logs, false ); // false = don't autoload
+
+        // Force immediate database write and clear object cache
+        wp_cache_delete( $this->log_option, 'options' );
+
+        // Flush any output buffers to ensure logs are visible immediately
+        if ( function_exists( 'wp_ob_end_flush_all' ) ) {
+            wp_ob_end_flush_all();
+        }
     }
 
     /**
@@ -1043,7 +1081,8 @@ class Seminargo_Hotel_Importer {
         $this->log( 'info', '📥 Starting batched hotel fetch (batch size: ' . $batch_size . ')' );
 
         while ( $has_more ) {
-            $this->log( 'info', '📦 Fetching batch: skip=' . $skip . ', limit=' . $batch_size );
+            $batch_number = ( $skip / $batch_size ) + 1;
+            $this->log( 'info', '📦 Batch ' . $batch_number . ': Fetching hotels ' . $skip . '-' . ( $skip + $batch_size ) );
 
             $query = '{
                 hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
@@ -1132,6 +1171,8 @@ class Seminargo_Hotel_Importer {
                 }
             }';
 
+            $this->log( 'info', '⏳ Waiting for API response...' );
+
             $response = wp_remote_post( $this->api_url, [
                 'body'    => json_encode( [ 'query' => $query ] ),
                 'headers' => [ 'Content-Type' => 'application/json' ],
@@ -1139,20 +1180,24 @@ class Seminargo_Hotel_Importer {
             ] );
 
             if ( is_wp_error( $response ) ) {
+                $this->log( 'error', '❌ API request failed: ' . $response->get_error_message() );
                 throw new Exception( 'API Error: ' . $response->get_error_message() );
             }
+
+            $this->log( 'info', '✅ API response received, parsing data...' );
 
             $body = wp_remote_retrieve_body( $response );
             $data = json_decode( $body );
 
             if ( isset( $data->errors ) ) {
+                $this->log( 'error', '❌ GraphQL errors: ' . json_encode( $data->errors ) );
                 throw new Exception( 'GraphQL Error: ' . json_encode( $data->errors ) );
             }
 
             $batch_hotels = $data->data->hotelList ?? [];
             $batch_count = count( $batch_hotels );
 
-            $this->log( 'info', '✅ Fetched ' . $batch_count . ' hotels in this batch' );
+            $this->log( 'success', '✅ Batch ' . $batch_number . ' complete: ' . $batch_count . ' hotels received' );
 
             if ( $batch_count === 0 ) {
                 // No more hotels to fetch
@@ -1177,6 +1222,16 @@ class Seminargo_Hotel_Importer {
      * Run the import process
      */
     public function run_import() {
+        // Clear any existing logs at start for fresh view
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        $this->log( 'info', '🚀 Starting hotel import...' );
+
+        // Increase memory and execution limits for large imports
+        ini_set( 'memory_limit', '512M' );
+        set_time_limit( 600 ); // 10 minutes
+
+        $this->log( 'info', '⚙️ Memory limit: ' . ini_get( 'memory_limit' ) . ', Execution time: ' . ini_get( 'max_execution_time' ) . 's' );
+
         $stats = [
             'created' => 0,
             'updated' => 0,
@@ -1185,7 +1240,8 @@ class Seminargo_Hotel_Importer {
             'time'    => time(),
         ];
 
-        $this->log( 'info', '🚀 Starting hotel import...' );
+        $this->log( 'info', '📡 Connecting to API endpoint: ' . $this->api_url );
+        $this->log( 'info', '⏳ Fetching hotels from API (this may take 1-2 minutes)...' );
 
         try {
             $hotels = $this->fetch_hotels_from_api();
@@ -1205,11 +1261,16 @@ class Seminargo_Hotel_Importer {
                 $api_hotel_ids[] = strval( $hotel->id );
             }
 
+            $this->log( 'info', '📊 API hotel IDs (' . count( $api_hotel_ids ) . '): ' . implode( ', ', array_slice( $api_hotel_ids, 0, 10 ) ) . ( count( $api_hotel_ids ) > 10 ? '...' : '' ) );
+
             // Get ALL existing WordPress hotel IDs (not just previously imported)
             $existing_wp_hotels = $this->get_all_wordpress_hotel_ids();
-            $this->log( 'info', '📊 Found ' . count( $existing_wp_hotels ) . ' existing hotels in WordPress' );
+            $this->log( 'info', '📊 WordPress hotel IDs (' . count( $existing_wp_hotels ) . '): ' . implode( ', ', array_slice( $existing_wp_hotels, 0, 10 ) ) . ( count( $existing_wp_hotels ) > 10 ? '...' : '' ) );
 
             // Process each hotel from API
+            $total_hotels = count( $hotels );
+            $processed_count = 0;
+
             foreach ( $hotels as $hotel ) {
                 try {
                     $result = $this->process_hotel( $hotel );
@@ -1218,9 +1279,19 @@ class Seminargo_Hotel_Importer {
                     } elseif ( $result === 'updated' ) {
                         $stats['updated']++;
                     }
+
+                    $processed_count++;
+
+                    // Log progress every 50 hotels
+                    if ( $processed_count % 50 === 0 || $processed_count === $total_hotels ) {
+                        $percentage = round( ( $processed_count / $total_hotels ) * 100 );
+                        $this->log( 'info', '⏳ Progress: ' . $processed_count . '/' . $total_hotels . ' hotels processed (' . $percentage . '%)' );
+                    }
+
                 } catch ( Exception $e ) {
                     $this->log( 'error', '❌ Error processing hotel ' . $hotel->businessName . ': ' . $e->getMessage(), $hotel->businessName );
                     $stats['errors']++;
+                    $processed_count++;
                 }
             }
 
@@ -1228,14 +1299,33 @@ class Seminargo_Hotel_Importer {
             $hotels_to_draft = array_diff( $existing_wp_hotels, $api_hotel_ids );
 
             if ( ! empty( $hotels_to_draft ) ) {
-                $this->log( 'info', '📤 Found ' . count( $hotels_to_draft ) . ' hotels to set as draft (not in API)' );
-            }
+                $draft_count = count( $hotels_to_draft );
+                $this->log( 'info', '📤 Found ' . $draft_count . ' hotels to set as draft (not in API)' );
 
-            foreach ( $hotels_to_draft as $wp_hotel_id ) {
-                $drafted = $this->draft_removed_hotel( $wp_hotel_id );
-                if ( $drafted ) {
-                    $stats['drafted']++;
+                // Show first 20 hotel IDs that would be drafted
+                $sample_draft_ids = array_slice( $hotels_to_draft, 0, 20 );
+                $this->log( 'info', '📋 Sample hotel IDs to draft: ' . implode( ', ', $sample_draft_ids ) . ( $draft_count > 20 ? ' (+' . ( $draft_count - 20 ) . ' more)' : '' ) );
+
+                // SAFETY CHECK: If more than 50% of hotels would be drafted, require confirmation
+                $wp_hotel_count = count( $existing_wp_hotels );
+                $draft_percentage = $wp_hotel_count > 0 ? round( ( $draft_count / $wp_hotel_count ) * 100 ) : 0;
+
+                if ( $draft_count > 50 && $draft_percentage > 50 ) {
+                    $this->log( 'error', '⚠️ SAFETY WARNING: ' . $draft_count . ' hotels (' . $draft_percentage . '%) would be drafted!' );
+                    $this->log( 'error', '⚠️ This suggests the API might be returning incomplete data or using wrong endpoint' );
+                    $this->log( 'error', '⚠️ Current API: ' . $this->api_url . ' returned only ' . count( $api_hotel_ids ) . ' hotels' );
+                    $this->log( 'error', '⚠️ Skipping mass draft to prevent data loss. Please verify API endpoint.' );
+                } else {
+                    // Safe to proceed with drafting
+                    foreach ( $hotels_to_draft as $wp_hotel_id ) {
+                        $drafted = $this->draft_removed_hotel( $wp_hotel_id );
+                        if ( $drafted ) {
+                            $stats['drafted']++;
+                        }
+                    }
                 }
+            } else {
+                $this->log( 'info', '✅ No hotels to draft - all WordPress hotels are in API feed' );
             }
 
             // Save current API hotel IDs for reference
@@ -1258,6 +1348,7 @@ class Seminargo_Hotel_Importer {
     private function get_all_wordpress_hotel_ids() {
         global $wpdb;
 
+        // Get all published hotel posts with hotel_id meta
         $results = $wpdb->get_col(
             "SELECT DISTINCT pm.meta_value
              FROM {$wpdb->postmeta} pm
@@ -1268,6 +1359,19 @@ class Seminargo_Hotel_Importer {
              AND pm.meta_value IS NOT NULL
              AND pm.meta_value != ''"
         );
+
+        // Also log the count for debugging
+        $total_hotels = $wpdb->get_var(
+            "SELECT COUNT(*)
+             FROM {$wpdb->posts}
+             WHERE post_type = 'hotel'
+             AND post_status = 'publish'"
+        );
+
+        $hotels_with_id = count( $results );
+        if ( $hotels_with_id < $total_hotels ) {
+            $this->log( 'info', '⚠️ Note: ' . $total_hotels . ' published hotels exist, but only ' . $hotels_with_id . ' have hotel_id meta field' );
+        }
 
         return array_map( 'strval', $results );
     }
