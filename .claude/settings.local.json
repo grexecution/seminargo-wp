@@ -28,7 +28,10 @@
       "Bash(for commit in b9feb8e fd12e80 d99777d 26d520b 93ded6f a3c8239)",
       "Bash(do echo '=== Commit $commit ===')",
       "Bash(php:*)",
-      "Bash(/Users/gregorwallner/.local/bin/wp post meta list:*)"
+      "Bash(/Users/gregorwallner/.local/bin/wp post meta list:*)",
+      "Bash(for commit in a3c8239 93ded6f 26d520b d99777d fd12e80 b9feb8e ccf4f71 31c1865 d199b81 5258629 ef2cc38 6dd8079)",
+      "Bash(git checkout 368b745 -- inc/hotel-importer.php)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nRevert hotel importer to working version from 368b745\n\nWHAT BROKE:\n- At 368b745, hotel importer worked perfectly with simple 5-line AJAX handler\n- Subsequent commits added 1,306 lines of \"improvements\" (chunked batch processing)\n- New code over-engineered the solution and broke functionality\n- Recent import drafted 518 hotels incorrectly due to flawed logic\n\nWHY IT BROKE:\n- Complicated chunked batch system never properly called from cached frontend JS\n- Added 3 new AJAX endpoints (start_import, process_batch, finalize_import)\n- Browser cache caused old JS to call wrong endpoints\n- Fatal flaw: if API returned empty, ALL hotels got drafted\n\nTHE FIX:\n- Reverted inc/hotel-importer.php to 368b745 working version\n- Removed 400+ lines of broken \"improvements\"\n- Back to simple, reliable: ajax_fetch_hotels() -> run_import() -> success\n\nLESSON: Don''t over-engineer working code. Simple is better.\n\n🤖 Generated with Claude Code\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

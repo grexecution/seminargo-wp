@@ -918,34 +918,59 @@ class Seminargo_Hotel_Importer {
                 btn.prop('disabled', true).text('⏳ <?php echo esc_js( __( 'Importing...', 'seminargo' ) ); ?>');
 
                 $('#import-progress').show();
-                $('#progress-bar').css('width', '10%');
+                $('#progress-bar').css('width', '10%').css('background', '#AC2A6E');
                 $('#progress-text').text('<?php echo esc_js( __( 'Connecting to API...', 'seminargo' ) ); ?>');
 
-                $.post(ajaxurl, { action: 'seminargo_fetch_hotels' }, function(response) {
-                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+                // Auto-refresh logs every 2 seconds to show live progress
+                var logRefreshInterval = setInterval(function() {
+                    loadLogs();
+                    $('#progress-bar').css('width', '50%'); // Show activity
+                }, 2000);
 
-                    if (response.success) {
-                        $('#progress-bar').css('width', '100%');
-                        $('#progress-text').text('✅ <?php echo esc_js( __( 'Import completed!', 'seminargo' ) ); ?>');
+                // Immediate first refresh
+                setTimeout(function() { loadLogs(); }, 500);
 
-                        $('#stat-created').text(response.data.created);
-                        $('#stat-updated').text(response.data.updated);
-                        $('#stat-drafted').text(response.data.drafted);
-                        $('#stat-errors').text(response.data.errors);
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: { action: 'seminargo_fetch_hotels' },
+                    timeout: 600000, // 10 minutes (matches PHP timeout)
+                    success: function(response) {
+                        clearInterval(logRefreshInterval);
+                        btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
 
-                        loadLogs();
+                        if (response.success) {
+                            $('#progress-bar').css('width', '100%');
+                            $('#progress-text').text('✅ <?php echo esc_js( __( 'Import completed!', 'seminargo' ) ); ?>');
 
-                        setTimeout(function() {
-                            $('#import-progress').fadeOut();
-                        }, 3000);
-                    } else {
+                            $('#stat-created').text(response.data.created);
+                            $('#stat-updated').text(response.data.updated);
+                            $('#stat-drafted').text(response.data.drafted);
+                            $('#stat-errors').text(response.data.errors);
+
+                            loadLogs();
+
+                            setTimeout(function() {
+                                $('#import-progress').fadeOut();
+                            }, 3000);
+                        } else {
+                            $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
+                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Error:', 'seminargo' ) ); ?> ' + response.data);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        clearInterval(logRefreshInterval);
+                        btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
                         $('#progress-bar').css('background', '#ff6b6b').css('width', '100%');
-                        $('#progress-text').text('❌ <?php echo esc_js( __( 'Error:', 'seminargo' ) ); ?> ' + response.data);
+
+                        if (status === 'timeout') {
+                            $('#progress-text').text('⏱️ <?php echo esc_js( __( 'Request timeout after 10 minutes. Check server logs.', 'seminargo' ) ); ?>');
+                        } else {
+                            $('#progress-text').text('❌ <?php echo esc_js( __( 'Connection failed:', 'seminargo' ) ); ?> ' + (error || status));
+                        }
+
+                        loadLogs(); // Load logs even on error
                     }
-                }).fail(function() {
-                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
-                    $('#progress-bar').css('background', '#ff6b6b');
-                    $('#progress-text').text('❌ <?php echo esc_js( __( 'Connection failed', 'seminargo' ) ); ?>');
                 });
             });
 
@@ -975,6 +1000,11 @@ class Seminargo_Hotel_Importer {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
         }
+
+        // Increase memory and execution time for large imports
+        @ini_set( 'memory_limit', '512M' );
+        @ini_set( 'max_execution_time', 600 ); // 10 minutes
+        @set_time_limit( 600 );
 
         $result = $this->run_import();
         wp_send_json_success( $result );

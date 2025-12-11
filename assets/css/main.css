@@ -855,14 +855,13 @@ body.slide-menu-open {
 /* Hero Search Area */
 .hero-search-area {
     background: transparent; /* Now using parent wrapper background */
-    padding: 3rem 0 2rem;
+    padding: 5rem var(--container-padding) 2rem var(--container-padding);
     text-align: center;
 }
 
 .hero-search-area .container {
     max-width: var(--container-max-width);
     margin: 0 auto;
-    padding: 0 var(--container-padding);
 }
 
 /* Hero Content Wrapper */
@@ -1204,8 +1203,9 @@ a.btn-inspirier:hover {
     }
 
     .hero-image-section {
-        max-width: calc(100% - 2rem);
-        margin: 2rem auto 0;
+        width: calc(100% - (var(--container-padding) * 1));
+        margin-left: 1rem!important;
+        margin-right: 0rem!important
     }
 
     .features-section {
@@ -7359,9 +7359,9 @@ a.btn-info-link svg {
         gap: 24px;
     }
 
-    .hotel-gallery-column {
-        position: relative;
-        top: 0;
+    .hotel-layout-two-col .hotel-gallery-column {
+        position: static;
+        top: auto;
         width: 100%;
         min-width: 100%;
         max-width: 100%;
@@ -7489,7 +7489,7 @@ body.single-hotel .hotel-header .hotel-title-area h1.hotel-title,
 body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
 .hotel-single .hotel-header h1.hotel-title {
     font-size: 2rem !important;
-    line-height: 0;
+    line-height: 1.2;
 }
 
 @media (max-width: 768px) {
@@ -7567,7 +7567,7 @@ body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
 
     /* Hero image - reduce height */
     .hero-image-section {
-        height: 200px;
+        height: 260px;
     }
 
     .hero-cta-content h1 {
