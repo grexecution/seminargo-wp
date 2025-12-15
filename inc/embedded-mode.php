@@ -86,3 +86,4 @@ function seminargo_embedded_mode_styles() {
     }
 }
 add_action( 'wp_head', 'seminargo_embedded_mode_styles' );
+

@@ -9,7 +9,12 @@ $hotel = $args;
 ?>
 
 <article class="hotel-card" data-hotel-id="<?php echo esc_attr( $hotel['id'] ); ?>" data-link-debug="<?php echo esc_attr( $hotel['link'] ); ?>">
-    <a href="<?php echo esc_url( $hotel['link'] ); ?>" class="hotel-card-link">
+    <a href="<?php echo esc_url( $hotel['link'] ); ?>" class="hotel-card-link"<?php
+        // Open in new tab when in embedded mode
+        if ( isset( $_GET['embedded'] ) && $_GET['embedded'] == '1' ) {
+            echo ' target="_blank" rel="noopener noreferrer"';
+        }
+    ?>>
 
         <!-- Hotel Image -->
         <div class="hotel-card-image">
