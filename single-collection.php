@@ -207,7 +207,7 @@ while ( have_posts() ) : the_post();
                 </div>
 
                 <div class="section-footer">
-                    <a href="<?php echo esc_url( home_url( 'https://lister-dev.seminargo.com/' ) ); ?>" class="btn-view-all">
+                    <a href="<?php echo esc_url('https://lister-dev.seminargo.com/' ); ?>" class="btn-view-all">
                         <?php esc_html_e( 'Alle Hotels ansehen', 'seminargo' ); ?>
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="5" y1="12" x2="19" y2="12"></line>
