@@ -15,7 +15,7 @@ get_header(); ?>
             <div class="hero-search-area">
                 <div class="container">
                     <div class="hero-content">
-                        <h1 class="hero-title">Finden Sie Ihr perfektes Seminarhotel</h1>
+                        <h1 class="hero-title">Finden Sie Ihr perfektes Tagungshotel</h1>
                         <p class="hero-subtitle">Über 24.000 Seminarhotels in Deutschland und Österreich</p>
                     </div>
 
@@ -49,7 +49,7 @@ get_header(); ?>
             <!-- Features Section (inside hero wrapper) -->
             <div class="features-section">
                 <div class="features-grid">
-                <div class="feature-item">
+                <a href="#hotels-section" class="feature-item">
                     <div class="feature-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -61,10 +61,11 @@ get_header(); ?>
                     <div class="feature-content">
                         <h3 class="feature-title">Über 24.000 Seminar-Locations</h3>
                         <p class="feature-description">Erstklassige Veranstaltungsorte in Österreich und Deutschland</p>
+                        <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                     </div>
-                </div>
+                </a>
 
-                <div class="feature-item">
+                <a href="#event-types-section" class="feature-item">
                     <div class="feature-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -74,10 +75,11 @@ get_header(); ?>
                     <div class="feature-content">
                         <h3 class="feature-title">Einfaches Buchungssystem</h3>
                         <p class="feature-description">Planen und buchen Sie Ihre Events mit wenigen Klicks</p>
+                        <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                     </div>
-                </div>
+                </a>
 
-                <div class="feature-item">
+                <a href="#popular-locations-section" class="feature-item">
                     <div class="feature-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <circle cx="12" cy="8" r="7"></circle>
@@ -87,8 +89,9 @@ get_header(); ?>
                     <div class="feature-content">
                         <h3 class="feature-title">Exklusive Angebote</h3>
                         <p class="feature-description">Profitieren Sie von maßgeschneiderten Paketen für Ihre Veranstaltung</p>
+                        <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                     </div>
-                </div>
+                </a>
             </div>
         </section> <!-- End of hero-section-wrapper -->
 
@@ -130,7 +133,7 @@ get_header(); ?>
         </section>
 
         <!-- Hotels Section -->
-        <section class="hotels-section">
+        <section id="hotels-section" class="hotels-section">
             <div class="container">
                 <div class="section-header">
                     <span class="section-tagline">Unsere Empfehlungen</span>
@@ -306,7 +309,7 @@ get_header(); ?>
         </section>
 
         <!-- Event Types Section -->
-        <section class="event-types-section">
+        <section id="event-types-section" class="event-types-section">
             <div class="container">
                 <div class="section-header">
                     <span class="section-tagline">Für jeden Anlass</span>
@@ -373,7 +376,7 @@ get_header(); ?>
         </section>
 
         <!-- Popular Locations Section -->
-        <section class="popular-locations-section">
+        <section id="popular-locations-section" class="popular-locations-section">
             <div class="container">
                 <div class="section-header">
                     <span class="section-tagline">Beliebte Regionen</span>
@@ -443,16 +446,25 @@ get_header(); ?>
                         <div class="seo-content-block">
                             <h3>Effiziente Veranstaltungsplanung</h3>
                             <p>Seminargo ist die führende digitale Buchungsplattform, die Veranstaltungsplaner mit über 24.000 Seminarhotels in Österreich und Deutschland verbindet. Unsere innovative Technologie spart Ihnen wertvolle Zeit bei der Suche nach dem perfekten Veranstaltungsort für Konferenzen, Meetings und Firmenevents.</p>
+                            <a href="#hotels-section" class="seo-link">
+                                <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
+                            </a>
                         </div>
 
                         <div class="seo-content-block">
                             <h3>Expertise & persönliche Beratung</h3>
                             <p>Unser Expertenteam sorgt dafür, dass Sie präzise Angebote erhalten und das ideale Seminarhotel für Ihre Veranstaltung finden. Von Wien über Graz bis München – wir kennen die besten Locations in Österreich und Deutschland und beraten Sie kostenlos bei Ihrer Auswahl.</p>
+                            <a href="#event-types-section" class="seo-link">
+                                <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
+                            </a>
                         </div>
 
                         <div class="seo-content-block">
                             <h3>Umfassende Ressourcen für Ihre Planung</h3>
                             <p>Nutzen Sie unsere praktischen Tools wie Checklisten, E-Books und den interaktiven Quick-Check, um systematisch Ihre perfekte Location zu identifizieren. Mit unseren Ressourcen wird die Eventplanung zum Kinderspiel.</p>
+                            <a href="#popular-locations-section" class="seo-link">
+                                <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
+                            </a>
                         </div>
                     </div>
 

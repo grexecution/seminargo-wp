@@ -835,12 +835,7 @@ body.slide-menu-open {
    7. Hero Section
    ========================================================================== */
 .hero-section-wrapper {
-    background:
-        linear-gradient(90deg, rgba(172, 42, 110, 0.03) 1px, transparent 1px),
-        linear-gradient(rgba(172, 42, 110, 0.03) 1px, transparent 1px),
-        linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%);
-    background-size: 80px 80px, 80px 80px, 100% 100%;
-    background-position: 0 0, 0 0, 0 0;
+    background: linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%);
     position: relative;
     margin-top: 0;
     padding-bottom: 1rem;
@@ -1142,12 +1137,50 @@ a.btn-inspirier:hover {
     border: 1px solid rgba(0, 0, 0, 0.06);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    color: inherit;
 }
 
 .feature-item:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
     border-color: rgba(172, 42, 110, 0.15);
+}
+
+.feature-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #AC2A6E;
+    margin-top: 0.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.feature-link-text {
+    position: relative;
+    display: inline-block;
+}
+
+.feature-link-text::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #AC2A6E, #D93A8A);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.feature-item:hover .feature-link {
+    color: #8A1F56;
+    gap: 0.5rem;
+}
+
+.feature-item:hover .feature-link-text::after {
+    width: 100%;
 }
 
 .feature-icon {
@@ -1475,6 +1508,9 @@ a.btn-inspirier:hover {
     line-height: 1.2;
     position: relative;
     padding-bottom: var(--spacing-lg);
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .seo-content-wrapper h2::after {
@@ -1556,6 +1592,21 @@ a.btn-inspirier:hover {
     line-height: 1.7;
     font-size: 1rem;
     margin: 0;
+}
+
+.seo-link {
+    display: inline-block;
+    margin-top: var(--spacing-md);
+    text-decoration: none;
+}
+
+.seo-content-block:hover .feature-link {
+    color: #8A1F56;
+    gap: 0.5rem;
+}
+
+.seo-content-block:hover .feature-link-text::after {
+    width: 100%;
 }
 
 .seo-keywords {

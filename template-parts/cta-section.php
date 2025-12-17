@@ -25,7 +25,7 @@ if ( empty( $buttons ) ) {
     $buttons = [
         [
             'text' => 'Sofort Anrufen',
-            'url' => 'tel:+4312345678',
+            'url' => 'tel:+43190858',
             'icon' => 'phone',
             'style' => 'white'
         ],
