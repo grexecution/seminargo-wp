@@ -8054,7 +8054,6 @@ body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
 .collection-article .entry-content p:first-of-type {
     font-size: 1.125rem;
     line-height: 1.8;
-    color: var(--color-text-light);
 }
 
 /* Enhanced Lists */
