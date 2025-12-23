@@ -36,7 +36,7 @@ Or create a simple one with this HTML template:
 </head>
 <body>
     <div>
-        <h1>Seminargo</h1>
+        <h1>seminargo</h1>
         <p>Modern WordPress Theme</p>
         <p style="font-size: 18px; margin-top: 40px;">Clean • Fast • Responsive</p>
     </div>

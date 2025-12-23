@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Seminargo_Hotel_Importer {
 
     private $api_url = 'https://dev.seminargo.eu/pricelist/graphql';
-    private $shop_url = 'https://finder.dev.seminargo.eu/hotels/';
+    private $shop_url = 'https://lister-staging.seminargo.com/hotels/';
     private $log_option = 'seminargo_hotels_import_log';
     private $last_import_option = 'seminargo_hotels_last_import';
     private $imported_ids_option = 'seminargo_hotels_imported_ids';

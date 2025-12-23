@@ -1,4 +1,4 @@
-# Seminargo Theme - UI/UX Design System & Guidelines
+# seminargo Theme - UI/UX Design System & Guidelines
 
 ## 🎯 CRITICAL: Layout Width Consistency
 
@@ -258,9 +258,9 @@ All spacing follows an 8-pixel grid system for consistency and harmony.
 
 ## 🎨 Color System
 
-### Primary Palette (Seminargo Berry)
+### Primary Palette (seminargo Berry)
 ```css
---color-primary:        #AC2A6E;  /* Seminargo Berry */
+--color-primary:        #AC2A6E;  /* seminargo Berry */
 --color-primary-light:  #D93A8A;  /* Berry Light */
 --color-primary-dark:   #8A1F56;  /* Berry Dark */
 

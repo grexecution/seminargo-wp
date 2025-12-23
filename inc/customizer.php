@@ -1,6 +1,6 @@
 <?php
 /**
- * Seminargo Theme Customizer
+ * seminargo Theme Customizer
  *
  * @package Seminargo
  */

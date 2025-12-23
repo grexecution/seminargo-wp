@@ -48,7 +48,7 @@
                     <!-- Right Side Navigation (Login + Menu) -->
                     <div class="header-right">
                         <!-- Login Button -->
-                        <a href="https://finder.dev.seminargo.eu/de/login" class="header-login-btn">
+                        <a href="https://lister-staging.seminargo.com/de/login" class="header-login-btn">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                 <circle cx="12" cy="7" r="4"></circle>
@@ -107,16 +107,16 @@
                 <!-- Help & Support Section -->
                 <div class="mobile-support-section">
                     <div class="support-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="10"></circle>
                             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            <circle cx="12" cy="17" r="0.5" fill="currentColor"></circle>
                         </svg>
                         <h3><?php esc_html_e( 'Hilfe & Support', 'seminargo' ); ?></h3>
                     </div>
                     <p class="support-text"><?php esc_html_e( 'Unser Team steht Ihnen gerne zur Verfügung', 'seminargo' ); ?></p>
                     <div class="support-actions">
-                        <a href="tel:+43123456789" class="support-link">
+                        <a href="tel:+43190858" class="support-link">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
                             </svg>

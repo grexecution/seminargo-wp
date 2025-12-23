@@ -34,7 +34,16 @@ while ( have_posts() ) : the_post();
                 <nav class="breadcrumbs" aria-label="<?php esc_attr_e( 'Breadcrumb', 'seminargo' ); ?>">
                     <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><?php esc_html_e( 'Home', 'seminargo' ); ?></a>
                     <span class="separator">/</span>
-                    <a href="<?php echo esc_url( get_permalink( get_option( 'page_for_posts' ) ) ); ?>"><?php esc_html_e( 'Blog', 'seminargo' ); ?></a>
+                    <?php
+                    // Find the blog page (page with Blog template)
+                    $blog_page = get_pages( array(
+                        'meta_key'   => '_wp_page_template',
+                        'meta_value' => 'page-blog.php',
+                        'number'     => 1
+                    ) );
+                    $blog_url = ! empty( $blog_page ) ? get_permalink( $blog_page[0]->ID ) : home_url( '/blog' );
+                    ?>
+                    <a href="<?php echo esc_url( $blog_url ); ?>"><?php esc_html_e( 'Blog', 'seminargo' ); ?></a>
                     <?php if ( ! empty( $categories ) ) : ?>
                         <span class="separator">/</span>
                         <a href="<?php echo esc_url( get_category_link( $categories[0]->term_id ) ); ?>"><?php echo esc_html( $categories[0]->name ); ?></a>

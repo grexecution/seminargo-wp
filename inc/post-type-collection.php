@@ -251,7 +251,7 @@ class Seminargo_Collection_Post_Type {
             <tr>
                 <th><label for="cta_phone"><?php esc_html_e( 'Phone Number', 'seminargo' ); ?></label></th>
                 <td>
-                    <input type="text" id="cta_phone" name="cta_phone" value="<?php echo esc_attr( $cta_phone ); ?>" class="regular-text" placeholder="+43 1 90 858">
+                    <input type="text" id="cta_phone" name="cta_phone" value="<?php echo esc_attr( $cta_phone ); ?>" class="regular-text" placeholder="+43/1/90 858">
                     <p class="description"><?php esc_html_e( 'Optional phone number to display.', 'seminargo' ); ?></p>
                 </td>
             </tr>

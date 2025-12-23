@@ -746,7 +746,7 @@ while ( have_posts() ) : the_post();
                             <!-- Info Card -->
                             <?php
                             // Build Finder URL with hotel parameter
-                            $finder_url = 'https://finder.dev.seminargo.eu/';
+                            $finder_url = 'https://lister-staging.seminargo.com/';
                             if ( !empty( $hotel_data['api_slug'] ) ) {
                                 // Use slug parameter (preferred by client)
                                 $finder_url .= '?addHotelBySlug=' . urlencode( $hotel_data['api_slug'] );

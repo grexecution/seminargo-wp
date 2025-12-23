@@ -1,6 +1,6 @@
 <?php
 /**
- * Seminargo Front Page - 1:1 Match with Elementor Design
+ * seminargo Front Page - 1:1 Match with Elementor Design
  *
  * @package Seminargo
  */
@@ -19,12 +19,15 @@ get_header(); ?>
                         <p class="hero-subtitle">Über 24.000 Seminarhotels in Deutschland und Österreich</p>
                     </div>
 
-                    <!-- Seminargo Search Widget -->
+                    <!-- seminargo Search Widget -->
                     <div class="search-widget-wrapper">
-                        <div id="seminargo-widget"
-                             data-platform-url="https://finder.dev.seminargo.eu/"></div>
-                        <script src="https://platform-widget.dev.seminargo.eu/widget.js"></script>
+                        <div class="search-widget-wrapper-inner">
+                            <div id="seminargo-widget"
+                                 data-platform-url="https://lister-staging.seminargo.com/"></div>
+                            <script src="https://platform-widget.dev.seminargo.eu/widget.js"></script>
+                        </div>
                     </div>
+                    <div class="search-widget-placeholder"></div>
                 </div>
             </div>
 
@@ -34,7 +37,7 @@ get_header(); ?>
                     <div class="hero-overlay"></div>
                     <div class="hero-cta-content">
                         <h2 class="hero-cta-title">Kreativer Workshop im Grünen?</h2>
-                        <p class="hero-cta-subtitle">Finde deine perfekte Veranstaltungsumgebung.</p>
+                        <p class="hero-cta-subtitle">Finden Sie Ihre perfekte Veranstaltungsumgebung.</p>
                         <span class="btn-inspirier">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -445,7 +448,7 @@ get_header(); ?>
                     <div class="seo-content-grid">
                         <div class="seo-content-block">
                             <h3>Effiziente Veranstaltungsplanung</h3>
-                            <p>Seminargo ist die führende digitale Buchungsplattform, die Veranstaltungsplaner mit über 24.000 Seminarhotels in Österreich und Deutschland verbindet. Unsere innovative Technologie spart Ihnen wertvolle Zeit bei der Suche nach dem perfekten Veranstaltungsort für Konferenzen, Meetings und Firmenevents.</p>
+                            <p>seminargo ist die führende digitale Buchungsplattform, die Veranstaltungsplaner mit über 24.000 Seminarhotels in Österreich und Deutschland verbindet. Unsere innovative Technologie spart Ihnen wertvolle Zeit bei der Suche nach dem perfekten Veranstaltungsort für Konferenzen, Meetings und Firmenevents.</p>
                             <a href="#hotels-section" class="seo-link">
                                 <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                             </a>
@@ -454,7 +457,7 @@ get_header(); ?>
                         <div class="seo-content-block">
                             <h3>Expertise & persönliche Beratung</h3>
                             <p>Unser Expertenteam sorgt dafür, dass Sie präzise Angebote erhalten und das ideale Seminarhotel für Ihre Veranstaltung finden. Von Wien über Graz bis München – wir kennen die besten Locations in Österreich und Deutschland und beraten Sie kostenlos bei Ihrer Auswahl.</p>
-                            <a href="#event-types-section" class="seo-link">
+                            <a href="/kontakt" class="seo-link">
                                 <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                             </a>
                         </div>

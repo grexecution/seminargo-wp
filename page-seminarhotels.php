@@ -69,7 +69,7 @@ get_header();
                         'price' => 83.00,
                         'amenities' => array( 'WLAN', 'Parkplatz', 'Spa', 'Restaurant', 'Pool' ),
                         'features' => array( 'Tagungsräume', 'Freizeitaktivitäten', 'Wellnessbereich' ),
-                        'link' => 'https://finder.dev.seminargo.eu/hotel-83421'
+                        'link' => 'https://lister-staging.seminargo.com/hotel-83421'
                     ),
                     array(
                         'id' => 2,
@@ -85,7 +85,7 @@ get_header();
                         'price' => 79.00,
                         'amenities' => array( 'WLAN', 'Parkplatz', 'Spa', 'Restaurant' ),
                         'features' => array( 'Moderne Technik', 'Golfplatz', 'Thermalbad' ),
-                        'link' => 'https://finder.dev.seminargo.eu/hotel-3111'
+                        'link' => 'https://lister-staging.seminargo.com/hotel-3111'
                     ),
                     array(
                         'id' => 3,
@@ -101,7 +101,7 @@ get_header();
                         'price' => 89.00,
                         'amenities' => array( 'WLAN', 'Parkplatz', 'Restaurant', 'Fitness' ),
                         'features' => array( 'Großer Konferenzsaal', 'Zentrale Lage', 'Event-Services' ),
-                        'link' => 'https://finder.dev.seminargo.eu/hotel-9227'
+                        'link' => 'https://lister-staging.seminargo.com/hotel-9227'
                     ),
                     array(
                         'id' => 4,
@@ -117,7 +117,7 @@ get_header();
                         'price' => 65.00,
                         'amenities' => array( 'WLAN', 'Parkplatz', 'Garten' ),
                         'features' => array( 'Ruhige Lage', 'Historisches Ambiente', 'Meditation' ),
-                        'link' => 'https://finder.dev.seminargo.eu/hotel-77341'
+                        'link' => 'https://lister-staging.seminargo.com/hotel-77341'
                     ),
                     array(
                         'id' => 5,
@@ -133,7 +133,7 @@ get_header();
                         'price' => 75.00,
                         'amenities' => array( 'WLAN', 'Parkplatz', 'Restaurant', 'Terrasse' ),
                         'features' => array( 'Klosteranlage', 'Kulturevents', 'Naturumgebung' ),
-                        'link' => 'https://finder.dev.seminargo.eu/hotel-70161'
+                        'link' => 'https://lister-staging.seminargo.com/hotel-70161'
                     ),
                     array(
                         'id' => 6,
@@ -149,7 +149,7 @@ get_header();
                         'price' => 99.00,
                         'amenities' => array( 'WLAN', 'Parkplatz', 'Spa', 'Pool', 'Restaurant' ),
                         'features' => array( 'Mediterrane Atmosphäre', 'Weinproben', 'Außenbereich' ),
-                        'link' => 'https://finder.dev.seminargo.eu/hotel-88251'
+                        'link' => 'https://lister-staging.seminargo.com/hotel-88251'
                     ),
                 );
 

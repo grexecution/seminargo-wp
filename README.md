@@ -1,4 +1,4 @@
-# Seminargo WordPress Theme
+# seminargo WordPress Theme
 
 A modern, clean, and performant WordPress theme built with best practices in mind.
 

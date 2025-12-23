@@ -364,7 +364,7 @@ add_action( 'wp_ajax_seminargo_send_test_email', function() {
     $from_name = get_post_meta( $page_id, '_contact_from_name', true ) ?: get_bloginfo( 'name' );
     $from_email = get_post_meta( $page_id, '_contact_from_email', true ) ?: 'noreply@' . parse_url( home_url(), PHP_URL_HOST );
 
-    $subject = __( 'Test E-Mail von Seminargo Kontaktformular', 'seminargo' );
+    $subject = __( 'Test E-Mail von seminargo Kontaktformular', 'seminargo' );
     $message = sprintf(
         __( "Dies ist eine Test-E-Mail von Ihrer Website %s.\n\nWenn Sie diese E-Mail erhalten haben, funktioniert Ihr Kontaktformular korrekt.\n\nZeitstempel: %s", 'seminargo' ),
         home_url(),

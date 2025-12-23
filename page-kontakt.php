@@ -123,7 +123,7 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['seminargo_contact_n
                         </div>
                         <div class="contact-card-content">
                             <h3><?php esc_html_e( 'Telefon', 'seminargo' ); ?></h3>
-                            <p>+43 1 90 858</p>
+                            <p>+43/1/90 858</p>
                         </div>
                     </a>
 
@@ -235,7 +235,7 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['seminargo_contact_n
                                         1160 Wien, Österreich
                                     </address>
                                     <p class="office-contact">
-                                        <a href="tel:+43190858">+43 1 90 858</a>
+                                        <a href="tel:+43190858">+43/1/90 858</a>
                                     </p>
                                 </div>
                             </div>
@@ -308,8 +308,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize map centered between Vienna and Munich
     var map = L.map('contact-map').setView([48.5, 12.5], 6);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+    // Use CartoDB Positron - clean, modern style matching hotel pages
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20
     }).addTo(map);
 
     // Custom marker icon

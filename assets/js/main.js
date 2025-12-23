@@ -1,5 +1,5 @@
 /**
- * Main JavaScript file for Seminargo theme
+ * Main JavaScript file for seminargo theme
  */
 (function($) {
     'use strict';
@@ -224,6 +224,97 @@
         });
     };
 
+    // Sticky search widget
+    const initStickySearchWidget = () => {
+        const searchWidget = document.querySelector('.search-widget-wrapper');
+        const placeholder = document.querySelector('.search-widget-placeholder');
+
+        if (!searchWidget || !placeholder) return;
+
+        // Get the initial position and height
+        let widgetInitialTop = 0;
+        let widgetHeight = 0;
+        let headerHeight = 80; // Default header height
+        let isSticky = false;
+
+        // Calculate positions
+        const calculatePositions = () => {
+            // Reset sticky state for accurate measurement
+            if (isSticky) {
+                searchWidget.classList.remove('is-sticky');
+                placeholder.classList.remove('is-active');
+            }
+
+            const rect = searchWidget.getBoundingClientRect();
+            widgetInitialTop = rect.top + window.pageYOffset;
+            widgetHeight = rect.height;
+
+            // Get actual header height from element
+            const header = document.querySelector('.site-header');
+            if (header) {
+                headerHeight = header.offsetHeight;
+            }
+
+            // Account for WordPress admin bar
+            const adminBar = document.getElementById('wpadminbar');
+            if (adminBar) {
+                headerHeight += adminBar.offsetHeight;
+            }
+
+            // Reset sticky state flag
+            isSticky = false;
+        };
+
+        // Handle scroll
+        const handleScroll = () => {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const triggerPoint = widgetInitialTop - headerHeight;
+
+            if (scrollTop >= triggerPoint && !isSticky) {
+                // Make sticky
+                searchWidget.classList.add('is-sticky');
+                placeholder.classList.add('is-active');
+                placeholder.style.height = widgetHeight + 'px';
+                isSticky = true;
+            } else if (scrollTop < triggerPoint && isSticky) {
+                // Remove sticky
+                searchWidget.classList.remove('is-sticky');
+                placeholder.classList.remove('is-active');
+                placeholder.style.height = '0';
+                isSticky = false;
+            }
+        };
+
+        // Initialize
+        calculatePositions();
+
+        // Listen to scroll with throttle for performance
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                window.requestAnimationFrame(() => {
+                    handleScroll();
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        });
+
+        // Recalculate on resize
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (isSticky) {
+                    searchWidget.classList.remove('is-sticky');
+                    placeholder.classList.remove('is-active');
+                    isSticky = false;
+                }
+                calculatePositions();
+            }, 250);
+        });
+    };
+
     // Initialize all features when DOM is ready
     $(document).ready(function() {
         initBackToTop();
@@ -235,6 +326,7 @@
         initCodeCopy();
         initReadingProgress();
         initDarkMode();
+        initStickySearchWidget();
     });
 
     // Reinitialize features after AJAX content load
