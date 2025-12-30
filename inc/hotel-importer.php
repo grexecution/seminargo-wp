@@ -1094,9 +1094,9 @@ class Seminargo_Hotel_Importer {
 
         $logs[] = $entry;
 
-        // Keep only last 500 entries
-        if ( count( $logs ) > 500 ) {
-            $logs = array_slice( $logs, -500 );
+        // Keep only last 2000 entries (increased for debugging large imports)
+        if ( count( $logs ) > 2000 ) {
+            $logs = array_slice( $logs, -2000 );
         }
 
         update_option( $this->log_option, $logs );
@@ -1111,11 +1111,16 @@ class Seminargo_Hotel_Importer {
         $max_hotels = PHP_INT_MAX; // No limit - fetch ALL hotels
         $skip = 0;
         $has_more = true;
+        $batch_number = 1;
 
-        $this->log( 'info', '📥 Starting batched hotel fetch (batch size: ' . $batch_size . ', fetching ALL hotels)' );
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        $this->log( 'info', '📥 STARTING HOTEL FETCH FROM API' );
+        $this->log( 'info', '   Batch size: ' . $batch_size );
+        $this->log( 'info', '   Max hotels: UNLIMITED (PHP_INT_MAX)' );
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
 
         while ( $has_more ) {
-            $this->log( 'info', '📦 Fetching batch: skip=' . $skip . ', limit=' . $batch_size );
+            $this->log( 'info', '📦 BATCH #' . $batch_number . ': Fetching skip=' . $skip . ', limit=' . $batch_size );
 
             $query = '{
                 hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
@@ -1234,30 +1239,38 @@ class Seminargo_Hotel_Importer {
 
             $batch_hotels = $data->data->hotelList ?? [];
             $batch_count = count( $batch_hotels );
+            $total_so_far = count( $all_hotels ) + $batch_count;
 
-            $this->log( 'info', '✅ Fetched ' . $batch_count . ' hotels in this batch (total so far: ' . ( count( $all_hotels ) + $batch_count ) . ')' );
+            $this->log( 'info', '   ✅ BATCH #' . $batch_number . ' RESULT: Received ' . $batch_count . ' hotels' );
+            $this->log( 'info', '   📊 Running total: ' . $total_so_far . ' hotels' );
 
             if ( $batch_count === 0 ) {
                 // No more hotels to fetch
-                $this->log( 'info', '🏁 Reached end of hotel list (batch returned 0 hotels)' );
+                $this->log( 'info', '🏁 FETCH COMPLETE: API returned 0 hotels (end of data)' );
                 $has_more = false;
             } else {
                 // Add to collection
                 $all_hotels = array_merge( $all_hotels, $batch_hotels );
                 $skip += $batch_size;
+                $batch_number++;
 
                 // If we got fewer hotels than the batch size, we're done
                 if ( $batch_count < $batch_size ) {
-                    $this->log( 'info', '🏁 Reached end of hotel list (batch returned ' . $batch_count . ' < ' . $batch_size . ')' );
+                    $this->log( 'info', '🏁 FETCH COMPLETE: Last batch had ' . $batch_count . ' hotels (less than ' . $batch_size . ')' );
                     $has_more = false;
                 } else {
+                    $this->log( 'info', '   ⏱️ Pausing 0.5 seconds before next batch...' );
                     // Small delay between batches to not overload the API (0.5 seconds)
                     usleep( 500000 );
                 }
             }
         }
 
-        $this->log( 'info', '✅ Total hotels fetched: ' . count( $all_hotels ) );
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        $this->log( 'info', '✅ FETCH SUMMARY' );
+        $this->log( 'info', '   Total batches: ' . ( $batch_number - 1 ) );
+        $this->log( 'info', '   Total hotels: ' . count( $all_hotels ) );
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
         return $all_hotels;
     }
 
@@ -1273,7 +1286,9 @@ class Seminargo_Hotel_Importer {
             'time'    => time(),
         ];
 
-        $this->log( 'info', '🚀 Starting hotel import...' );
+        $this->log( 'info', '' );
+        $this->log( 'info', '🚀 STARTING HOTEL IMPORT PROCESS' );
+        $this->log( 'info', '   Timestamp: ' . date( 'Y-m-d H:i:s' ) );
 
         try {
             $hotels = $this->fetch_hotels_from_api();
@@ -1285,7 +1300,11 @@ class Seminargo_Hotel_Importer {
                 return $stats;
             }
 
-            $this->log( 'info', '📦 Received ' . count( $hotels ) . ' hotels from API' );
+            $this->log( 'info', '' );
+            $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+            $this->log( 'info', '📦 STARTING HOTEL PROCESSING' );
+            $this->log( 'info', '   Hotels to process: ' . count( $hotels ) );
+            $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
 
             // Get all API hotel IDs (as strings for comparison)
             $api_hotel_ids = [];
