@@ -73,23 +73,54 @@
             }
         });
 
-        // Handle submenu toggles in mobile menu
-        const subMenuToggles = slideMenu.querySelectorAll('.menu-item-has-children > a');
-        subMenuToggles.forEach(toggle => {
-            toggle.addEventListener('click', function(e) {
-                if (window.innerWidth <= 1024) {
-                    const subMenu = this.nextElementSibling;
-                    if (subMenu && subMenu.classList.contains('sub-menu')) {
-                        e.preventDefault();
-                        this.parentElement.classList.toggle('submenu-open');
+        // Handle submenu toggle buttons
+        const initSubmenuToggles = () => {
+            const submenuToggles = slideMenu.querySelectorAll('.submenu-toggle');
 
-                        // Update aria-expanded
-                        const isExpanded = this.parentElement.classList.contains('submenu-open');
-                        this.setAttribute('aria-expanded', isExpanded);
+            submenuToggles.forEach(toggle => {
+                toggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const menuItem = this.closest('.menu-item-has-children');
+                    const subMenu = menuItem.querySelector('.sub-menu');
+
+                    if (!subMenu) return;
+
+                    // Check if submenu is currently open
+                    const isOpen = menuItem.classList.contains('submenu-open');
+
+                    // Close all other open submenus at the same level (optional - remove these 3 lines if you want multiple open)
+                    const siblings = menuItem.parentElement.querySelectorAll(':scope > .menu-item-has-children.submenu-open');
+                    siblings.forEach(sibling => {
+                        if (sibling !== menuItem) {
+                            sibling.classList.remove('submenu-open');
+                            const siblingToggle = sibling.querySelector('.submenu-toggle');
+                            if (siblingToggle) siblingToggle.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+
+                    // Toggle current submenu
+                    menuItem.classList.toggle('submenu-open');
+                    const newState = !isOpen;
+                    this.setAttribute('aria-expanded', newState);
+
+                    // Smooth scroll into view if opening and below viewport
+                    if (newState) {
+                        setTimeout(() => {
+                            const rect = subMenu.getBoundingClientRect();
+                            const slideMenuPanel = slideMenu.querySelector('.slide-menu-panel');
+                            if (slideMenuPanel && rect.bottom > window.innerHeight) {
+                                menuItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }
+                        }, 100);
                     }
-                }
+                });
             });
-        });
+        };
+
+        // Initialize submenu toggles
+        initSubmenuToggles();
     };
 
 

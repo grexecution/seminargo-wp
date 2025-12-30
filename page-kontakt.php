@@ -28,6 +28,7 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['seminargo_contact_n
         $phone = sanitize_text_field( $_POST['contact_phone'] ?? '' );
         $subject = sanitize_text_field( $_POST['contact_subject'] ?? '' );
         $message = sanitize_textarea_field( $_POST['contact_message'] ?? '' );
+        $privacy_accepted = isset( $_POST['contact_privacy'] ) ? 1 : 0;
 
         if ( empty( $name ) || empty( $email ) || empty( $message ) ) {
             $form_error = true;
@@ -35,6 +36,9 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['seminargo_contact_n
         } elseif ( ! is_email( $email ) ) {
             $form_error = true;
             $form_message = __( 'Bitte geben Sie eine gültige E-Mail-Adresse ein.', 'seminargo' );
+        } elseif ( ! $privacy_accepted ) {
+            $form_error = true;
+            $form_message = __( 'Bitte akzeptieren Sie die Datenschutzbestimmungen.', 'seminargo' );
         } else {
             // Build email subject
             $email_subject = ! empty( $subject ) ? $subject : str_replace( '{name}', $name, $subject_template );
@@ -63,6 +67,19 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['seminargo_contact_n
 
             // Send email
             $sent = wp_mail( $recipient_email, $email_subject, $body, $headers );
+
+            // Save to database (regardless of email success for safety)
+            if ( function_exists( 'seminargo_save_contact_submission' ) ) {
+                seminargo_save_contact_submission( [
+                    'name'             => $name,
+                    'email'            => $email,
+                    'phone'            => $phone,
+                    'subject'          => $subject,
+                    'message'          => $message,
+                    'privacy_accepted' => $privacy_accepted,
+                    'email_sent'       => $sent ? 1 : 0,
+                ] );
+            }
 
             if ( $sent ) {
                 $form_submitted = true;
@@ -201,6 +218,23 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['seminargo_contact_n
                             <div class="form-group">
                                 <label for="contact_message"><?php esc_html_e( 'Nachricht', 'seminargo' ); ?> <span class="required">*</span></label>
                                 <textarea id="contact_message" name="contact_message" rows="5" required placeholder="<?php esc_attr_e( 'Ihre Nachricht an uns...', 'seminargo' ); ?>"></textarea>
+                            </div>
+
+                            <div class="form-group form-privacy-checkbox">
+                                <label class="privacy-label">
+                                    <input type="checkbox" id="contact_privacy" name="contact_privacy" required>
+                                    <span>
+                                        <?php
+                                        printf(
+                                            wp_kses(
+                                                __( 'Ich habe die <a href="%s" target="_blank">Datenschutzbestimmungen</a> gelesen und akzeptiere diese. <span class="required">*</span>', 'seminargo' ),
+                                                array( 'a' => array( 'href' => array(), 'target' => array() ), 'span' => array( 'class' => array() ) )
+                                            ),
+                                            esc_url( home_url( '/datenschutz' ) )
+                                        );
+                                        ?>
+                                    </span>
+                                </label>
                             </div>
 
                             <div class="form-group form-submit">

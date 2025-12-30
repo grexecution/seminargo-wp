@@ -577,6 +577,237 @@ body:not(.wp-admin) .hero-section-wrapper a:hover {
     stroke: white;
 }
 
+/* ===== Expandable Submenu Styles ===== */
+
+/* Menu item wrapper for parent items with toggle button */
+.mobile-menu .menu-item-wrapper {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    position: relative;
+    background: white;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.mobile-menu .menu-item-wrapper > a {
+    flex: 1;
+    border: none !important;
+    border-radius: 10px 0 0 10px;
+}
+
+/* Submenu toggle button */
+.submenu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    background: transparent;
+    border: none;
+    border-left: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0 10px 10px 0;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.submenu-toggle svg {
+    width: 16px;
+    height: 16px;
+    stroke: var(--color-text-light);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover states - unified wrapper */
+.mobile-menu .menu-item-wrapper:hover {
+    background: linear-gradient(135deg, rgba(172, 42, 110, 0.08), rgba(217, 58, 138, 0.08));
+    border-color: rgba(172, 42, 110, 0.2);
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(172, 42, 110, 0.1);
+}
+
+.mobile-menu .menu-item-wrapper:hover > a {
+    background: transparent !important;
+    color: #AC2A6E !important;
+    border-color: transparent !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.mobile-menu .menu-item-wrapper:hover > a .menu-icon svg {
+    stroke: var(--color-primary);
+    transform: scale(1.1);
+}
+
+.mobile-menu .menu-item-wrapper:hover .submenu-toggle {
+    border-left-color: rgba(172, 42, 110, 0.15);
+}
+
+.mobile-menu .menu-item-wrapper:hover .submenu-toggle svg {
+    stroke: var(--color-primary);
+}
+
+/* Active/expanded state */
+.mobile-menu li.menu-item-has-children.submenu-open > .menu-item-wrapper {
+    background: linear-gradient(135deg, rgba(172, 42, 110, 0.1), rgba(217, 58, 138, 0.1));
+    border-color: rgba(172, 42, 110, 0.3);
+}
+
+.mobile-menu li.menu-item-has-children.submenu-open > .menu-item-wrapper > a {
+    background: transparent !important;
+}
+
+.mobile-menu li.menu-item-has-children.submenu-open > .menu-item-wrapper .submenu-toggle {
+    border-left-color: rgba(172, 42, 110, 0.2);
+}
+
+.mobile-menu li.menu-item-has-children.submenu-open > .menu-item-wrapper .submenu-toggle svg {
+    transform: rotate(180deg);
+    stroke: var(--color-primary);
+}
+
+/* Current menu item with children */
+.mobile-menu li.menu-item-has-children.current-menu-item > .menu-item-wrapper {
+    background: linear-gradient(135deg, var(--color-primary-gradient-from), var(--color-primary-gradient-to));
+    box-shadow: 0 4px 12px rgba(172, 42, 110, 0.3);
+}
+
+.mobile-menu li.menu-item-has-children.current-menu-item > .menu-item-wrapper > a {
+    background: transparent !important;
+    color: white !important;
+}
+
+.mobile-menu li.menu-item-has-children.current-menu-item > .menu-item-wrapper > a .menu-icon svg {
+    stroke: white;
+}
+
+.mobile-menu li.menu-item-has-children.current-menu-item > .menu-item-wrapper .submenu-toggle {
+    border-left-color: rgba(255, 255, 255, 0.2);
+}
+
+.mobile-menu li.menu-item-has-children.current-menu-item > .menu-item-wrapper .submenu-toggle svg {
+    stroke: white;
+}
+
+/* Submenu styles */
+.mobile-menu .sub-menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: top;
+}
+
+.mobile-menu li.submenu-open > .sub-menu {
+    max-height: 1000px;
+    opacity: 1;
+    margin-top: 0.5rem;
+    padding-left: 1rem;
+}
+
+/* Submenu items */
+.mobile-menu .sub-menu li {
+    margin-bottom: 0.25rem;
+}
+
+.mobile-menu .sub-menu li a {
+    padding: 0.75rem 1rem;
+    font-size: 0.9375rem;
+    background: linear-gradient(135deg, rgba(172, 42, 110, 0.03), rgba(217, 58, 138, 0.03));
+    border-left: 3px solid rgba(172, 42, 110, 0.2);
+    position: relative;
+}
+
+.mobile-menu .sub-menu li a::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 0;
+    background: linear-gradient(135deg, #AC2A6E, #D93A8A);
+    transition: height 0.3s ease;
+}
+
+.mobile-menu .sub-menu li a:hover::before {
+    height: 100%;
+}
+
+.mobile-menu .sub-menu li a .menu-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.mobile-menu .sub-menu li a .menu-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Nested submenu items (third level) */
+.mobile-menu .sub-menu .sub-menu {
+    padding-left: 1.5rem;
+}
+
+.mobile-menu .sub-menu .sub-menu li a {
+    padding-left: 0.75rem;
+    font-size: 0.875rem;
+    background: linear-gradient(135deg, rgba(172, 42, 110, 0.02), rgba(217, 58, 138, 0.02));
+    border-left-color: rgba(172, 42, 110, 0.15);
+}
+
+/* Current menu item in submenu */
+.mobile-menu .sub-menu li.current-menu-item > a {
+    background: linear-gradient(135deg, rgba(172, 42, 110, 0.15), rgba(217, 58, 138, 0.15));
+    color: var(--color-primary) !important;
+    font-weight: 600;
+    border-left-color: var(--color-primary);
+}
+
+.mobile-menu .sub-menu li.current-menu-item > a .menu-icon svg {
+    stroke: var(--color-primary);
+}
+
+/* Animation for submenu items - stagger effect */
+.mobile-menu li.submenu-open > .sub-menu > li {
+    animation: slideInSubmenu 0.3s ease forwards;
+    opacity: 0;
+}
+
+.mobile-menu li.submenu-open > .sub-menu > li:nth-child(1) { animation-delay: 0.05s; }
+.mobile-menu li.submenu-open > .sub-menu > li:nth-child(2) { animation-delay: 0.1s; }
+.mobile-menu li.submenu-open > .sub-menu > li:nth-child(3) { animation-delay: 0.15s; }
+.mobile-menu li.submenu-open > .sub-menu > li:nth-child(4) { animation-delay: 0.2s; }
+.mobile-menu li.submenu-open > .sub-menu > li:nth-child(5) { animation-delay: 0.25s; }
+
+@keyframes slideInSubmenu {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+    .mobile-menu li.submenu-open > .sub-menu {
+        padding-left: 0.5rem;
+    }
+
+    .mobile-menu .sub-menu li a {
+        padding: 0.625rem 0.875rem;
+        font-size: 0.875rem;
+    }
+}
+
 .mobile-icon-nav {
     margin: 2rem 0;
     padding-top: 2rem;
@@ -985,7 +1216,7 @@ body.slide-menu-open {
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    padding: 1.5rem var(--container-padding);
+    padding: 1rem var(--container-padding);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
     animation: slideDown 0.3s ease-out;
     border-bottom: 1px solid rgba(172, 42, 110, 0.1);
@@ -2598,6 +2829,8 @@ a.btn-inspirier:hover {
 }
 
 .event-type-icon svg {
+    width: 48px;
+    height: 48px;
     stroke: #AC2A6E;
     transition: stroke 0.4s ease;
 }
@@ -8874,6 +9107,48 @@ body.single-hotel .hotel-content-column > .hotel-header h1.hotel-title,
     background: #8A1F56;
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(172, 42, 110, 0.3);
+}
+
+/* Privacy Checkbox */
+.contact-form .form-privacy-checkbox {
+    margin-top: var(--spacing-lg);
+    margin-bottom: var(--spacing-md);
+}
+
+.contact-form .privacy-label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.contact-form .privacy-label input[type="checkbox"] {
+    width: auto;
+    min-width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    cursor: pointer;
+    accent-color: #AC2A6E;
+    flex-shrink: 0;
+}
+
+.contact-form .privacy-label span {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--color-text);
+}
+
+.contact-form .privacy-label a {
+    color: #AC2A6E;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+
+.contact-form .privacy-label a:hover {
+    color: #8A1F56;
+    text-decoration: underline;
 }
 
 /* Contact Info */

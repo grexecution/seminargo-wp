@@ -320,52 +320,63 @@ get_header(); ?>
                 </div>
                 <div class="event-types-grid">
                     <?php
-                    $event_types = array(
-                        array(
-                            'title' => 'Seminar',
-                            'description' => 'Schulungen und Weiterbildungen',
-                            'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Seminar & Spa',
-                            'description' => 'Lernen mit Wellness kombiniert',
-                            'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Tagung',
-                            'description' => 'Professionelle Meetings',
-                            'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Veranstaltung',
-                            'description' => 'Events und Feiern',
-                            'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Workshop',
-                            'description' => 'Interaktive Workshops',
-                            'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Konferenz',
-                            'description' => 'Große Konferenzen',
-                            'icon' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>',
-                            'link' => '#'
-                        )
-                    );
+                    // Get selected collection IDs from homepage custom field
+                    $event_type_collections = get_post_meta( get_the_ID(), 'event_type_collections', true );
 
-                    foreach ($event_types as $event_type) : ?>
-                        <a href="<?php echo esc_url($event_type['link']); ?>" class="event-type-card">
+                    // Query collections
+                    if ( ! empty( $event_type_collections ) ) {
+                        $event_types_query = new WP_Query( array(
+                            'post_type'      => 'collection',
+                            'posts_per_page' => 6,
+                            'post__in'       => explode( ',', $event_type_collections ),
+                            'orderby'        => 'post__in',
+                            'post_status'    => 'publish',
+                        ) );
+                    } else {
+                        // Fallback: show all collections
+                        $event_types_query = new WP_Query( array(
+                            'post_type'      => 'collection',
+                            'posts_per_page' => 6,
+                            'orderby'        => 'menu_order',
+                            'order'          => 'ASC',
+                            'post_status'    => 'publish',
+                        ) );
+                    }
+
+                    if ( $event_types_query->have_posts() ) :
+                        while ( $event_types_query->have_posts() ) : $event_types_query->the_post();
+                            $collection_link = get_permalink();
+                            // Use custom home excerpt if available, otherwise fall back to regular excerpt
+                            $collection_excerpt = get_post_meta( get_the_ID(), 'home_excerpt', true );
+                            if ( empty( $collection_excerpt ) ) {
+                                $collection_excerpt = get_the_excerpt();
+                            }
+
+                            // Get icon from selected icon key
+                            $icon_key = get_post_meta( get_the_ID(), 'collection_icon', true );
+                            $all_icons = function_exists( 'seminargo_get_collection_icons' ) ? seminargo_get_collection_icons() : array();
+
+                            // Debug: Show what we're getting
+                            // echo '<!-- Collection ID: ' . get_the_ID() . ' | Icon Key: ' . $icon_key . ' -->';
+
+                            // Get the SVG for the selected icon
+                            if ( ! empty( $icon_key ) && isset( $all_icons[ $icon_key ] ) ) {
+                                $collection_icon = $all_icons[ $icon_key ]['svg'];
+                            } else {
+                                // Default icon if none selected
+                                $collection_icon = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>';
+                            }
+                    ?>
+                        <a href="<?php echo esc_url( $collection_link ); ?>" class="event-type-card">
                             <div class="event-type-icon">
-                                <?php echo $event_type['icon']; ?>
+                                <?php
+                                // Output SVG directly (safe since it comes from our own function)
+                                // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                                echo $collection_icon;
+                                ?>
                             </div>
-                            <h3 class="event-type-title"><?php echo esc_html($event_type['title']); ?></h3>
-                            <p class="event-type-description"><?php echo esc_html($event_type['description']); ?></p>
+                            <h3 class="event-type-title"><?php the_title(); ?></h3>
+                            <p class="event-type-description"><?php echo esc_html( $collection_excerpt ?: 'Entdecken Sie passende Locations' ); ?></p>
                             <span class="event-type-arrow">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -373,7 +384,11 @@ get_header(); ?>
                                 </svg>
                             </span>
                         </a>
-                    <?php endforeach; ?>
+                    <?php
+                        endwhile;
+                        wp_reset_postdata();
+                    endif;
+                    ?>
                 </div>
             </div>
         </section>
@@ -387,51 +402,53 @@ get_header(); ?>
                 </div>
                 <div class="locations-grid">
                     <?php
-                    $locations = array(
-                        array(
-                            'title' => 'Design Hotels',
-                            'image' => 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=400&h=300&fit=crop',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Tagungshotels Berlin',
-                            'image' => 'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=400&h=300&fit=crop',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Tagungshotels Hamburg',
-                            'image' => 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Tagungshotels Frankfurt',
-                            'image' => 'https://images.unsplash.com/photo-1467377791767-c929b5dc9a23?w=400&h=300&fit=crop',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Tagungshotels Köln',
-                            'image' => 'https://images.unsplash.com/photo-1546412414-e1885259563a?w=400&h=300&fit=crop',
-                            'link' => '#'
-                        ),
-                        array(
-                            'title' => 'Tagungshotels München',
-                            'image' => 'https://images.unsplash.com/photo-1595521624992-48a59aef95e3?w=400&h=300&fit=crop',
-                            'link' => '#'
-                        )
-                    );
+                    // Get selected collection IDs from homepage custom field
+                    $popular_location_collections = get_post_meta( get_the_ID(), 'popular_location_collections', true );
 
-                    foreach ($locations as $location) : ?>
+                    // Query collections
+                    if ( ! empty( $popular_location_collections ) ) {
+                        $locations_query = new WP_Query( array(
+                            'post_type'      => 'collection',
+                            'posts_per_page' => 6,
+                            'post__in'       => explode( ',', $popular_location_collections ),
+                            'orderby'        => 'post__in',
+                            'post_status'    => 'publish',
+                        ) );
+                    } else {
+                        // Fallback: show random collections
+                        $locations_query = new WP_Query( array(
+                            'post_type'      => 'collection',
+                            'posts_per_page' => 6,
+                            'orderby'        => 'rand',
+                            'post_status'    => 'publish',
+                        ) );
+                    }
+
+                    if ( $locations_query->have_posts() ) :
+                        while ( $locations_query->have_posts() ) : $locations_query->the_post();
+                            $collection_link = get_permalink();
+                            $collection_image = get_the_post_thumbnail_url( get_the_ID(), 'medium' );
+
+                            // Fallback image
+                            if ( empty( $collection_image ) ) {
+                                $collection_image = 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=400&h=300&fit=crop';
+                            }
+                    ?>
                         <div class="location-card">
-                            <a href="<?php echo esc_url($location['link']); ?>">
+                            <a href="<?php echo esc_url( $collection_link ); ?>">
                                 <div class="location-image">
-                                    <img src="<?php echo esc_url($location['image']); ?>" alt="<?php echo esc_attr($location['title']); ?>">
+                                    <img src="<?php echo esc_url( $collection_image ); ?>" alt="<?php echo esc_attr( get_the_title() ); ?>" loading="lazy">
                                     <div class="location-overlay">
-                                        <h3 class="location-title"><?php echo esc_html($location['title']); ?></h3>
+                                        <h3 class="location-title"><?php the_title(); ?></h3>
                                     </div>
                                 </div>
                             </a>
                         </div>
-                    <?php endforeach; ?>
+                    <?php
+                        endwhile;
+                        wp_reset_postdata();
+                    endif;
+                    ?>
                 </div>
             </div>
         </section>
@@ -449,7 +466,7 @@ get_header(); ?>
                         <div class="seo-content-block">
                             <h3>Effiziente Veranstaltungsplanung</h3>
                             <p>seminargo ist die führende digitale Buchungsplattform, die Veranstaltungsplaner mit über 24.000 Seminarhotels in Österreich und Deutschland verbindet. Unsere innovative Technologie spart Ihnen wertvolle Zeit bei der Suche nach dem perfekten Veranstaltungsort für Konferenzen, Meetings und Firmenevents.</p>
-                            <a href="#hotels-section" class="seo-link">
+                            <a href="/preise" class="seo-link">
                                 <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                             </a>
                         </div>
@@ -465,7 +482,7 @@ get_header(); ?>
                         <div class="seo-content-block">
                             <h3>Umfassende Ressourcen für Ihre Planung</h3>
                             <p>Nutzen Sie unsere praktischen Tools wie Checklisten, E-Books und den interaktiven Quick-Check, um systematisch Ihre perfekte Location zu identifizieren. Mit unseren Ressourcen wird die Eventplanung zum Kinderspiel.</p>
-                            <a href="#popular-locations-section" class="seo-link">
+                            <a href="/downloads" class="seo-link">
                                 <span class="feature-link"><span class="feature-link-text">Mehr erfahren</span> →</span>
                             </a>
                         </div>

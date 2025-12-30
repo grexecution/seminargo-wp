@@ -15,9 +15,19 @@ class Seminargo_Hotel_Importer {
 
     private $api_url = 'https://dev.seminargo.eu/pricelist/graphql';
     private $shop_url = 'https://lister-staging.seminargo.com/hotels/';
-    private $log_option = 'seminargo_hotels_import_log';
+
+    // Logging options
+    private $current_import_logs = []; // Temporary storage during import
+    private $last_sync_logs_option = 'seminargo_hotel_last_sync_logs'; // Full logs of last run only
+    private $error_logs_option = 'seminargo_hotel_error_logs'; // Permanent error history
+    private $import_history_option = 'seminargo_hotel_import_history'; // List of past imports
+
+    // Import tracking
     private $last_import_option = 'seminargo_hotels_last_import';
     private $imported_ids_option = 'seminargo_hotels_imported_ids';
+
+    // Legacy (to be removed)
+    private $log_option = 'seminargo_hotels_import_log';
     private $auto_import_enabled_option = 'seminargo_auto_import_enabled';
     private $auto_import_progress_option = 'seminargo_auto_import_progress';
 

@@ -30,7 +30,13 @@
       "Bash(php -l:*)",
       "WebFetch(domain:semseminargstg.wpenginepowered.com)",
       "WebFetch(domain:developer.wordpress.org)",
-      "WebFetch(domain:gist.github.com)"
+      "WebFetch(domain:gist.github.com)",
+      "Bash(rm:*)",
+      "Bash(ls -la functions.php*)",
+      "Bash(wp plugin list:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(wp option get:*)"
     ],
     "deny": [],
     "ask": []

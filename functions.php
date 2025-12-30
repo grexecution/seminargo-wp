@@ -172,6 +172,11 @@ if ( file_exists( SEMINARGO_INC_PATH . 'contact-settings.php' ) ) {
     require SEMINARGO_INC_PATH . 'contact-settings.php';
 }
 
+// Contact form database
+if ( file_exists( SEMINARGO_INC_PATH . 'contact-form-db.php' ) ) {
+    require SEMINARGO_INC_PATH . 'contact-form-db.php';
+}
+
 // Embedded mode support (iframe integration)
 if ( file_exists( SEMINARGO_INC_PATH . 'embedded-mode.php' ) ) {
     require SEMINARGO_INC_PATH . 'embedded-mode.php';

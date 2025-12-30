@@ -403,6 +403,22 @@ class Seminargo_Mobile_Menu_Walker extends Walker_Nav_Menu {
     }
 
     /**
+     * Start submenu level
+     */
+    function start_lvl( &$output, $depth = 0, $args = null ) {
+        $indent = str_repeat( "\t", $depth );
+        $output .= "\n$indent<ul class=\"sub-menu\">\n";
+    }
+
+    /**
+     * End submenu level
+     */
+    function end_lvl( &$output, $depth = 0, $args = null ) {
+        $indent = str_repeat( "\t", $depth );
+        $output .= "$indent</ul>\n";
+    }
+
+    /**
      * Start element
      */
     function start_el( &$output, $item, $depth = 0, $args = null, $id = 0 ) {
@@ -410,6 +426,10 @@ class Seminargo_Mobile_Menu_Walker extends Walker_Nav_Menu {
 
         $classes = empty( $item->classes ) ? array() : (array) $item->classes;
         $classes[] = 'menu-item-' . $item->ID;
+
+        // Check if this specific menu item has children by looking at the classes array
+        // WordPress adds 'menu-item-has-children' class automatically to items with submenus
+        $has_children = in_array( 'menu-item-has-children', $classes );
 
         $class_names = join( ' ', apply_filters( 'nav_menu_css_class', array_filter( $classes ), $item, $args, $depth ) );
         $class_names = $class_names ? ' class="' . esc_attr( $class_names ) . '"' : '';
@@ -454,12 +474,52 @@ class Seminargo_Mobile_Menu_Walker extends Walker_Nav_Menu {
         }
 
         $item_output = $args->before;
+
+        // Only add wrapper and toggle for top-level items (depth 0) with children
+        $show_toggle = $has_children && $depth === 0;
+
+        // If item has children and is top-level, wrap in a container div
+        if ( $show_toggle ) {
+            $item_output .= '<div class="menu-item-wrapper">';
+        }
+
         $item_output .= '<a' . $attributes . '>';
         $item_output .= '<span class="menu-icon">' . $icon . '</span>';
         $item_output .= $args->link_before . $title . $args->link_after;
         $item_output .= '</a>';
+
+        // Add submenu toggle button only for top-level parent items
+        if ( $show_toggle ) {
+            $item_output .= '<button class="submenu-toggle" aria-label="' . esc_attr__( 'Toggle submenu', 'seminargo' ) . '" aria-expanded="false">';
+            $item_output .= '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+            $item_output .= '</button>';
+            $item_output .= '</div>'; // Close menu-item-wrapper
+        }
+
         $item_output .= $args->after;
 
         $output .= apply_filters( 'walker_nav_menu_start_el', $item_output, $item, $depth, $args );
+    }
+
+    /**
+     * Display children callback
+     */
+    function display_element( $element, &$children_elements, $max_depth, $depth, $args, &$output ) {
+        if ( ! $element ) {
+            return;
+        }
+
+        $id_field = $this->db_fields['id'];
+
+        // Check if this specific element has children in the children_elements array
+        if ( ! empty( $children_elements[ $element->$id_field ] ) ) {
+            // Add class to the element itself
+            if ( ! in_array( 'menu-item-has-children', $element->classes ) ) {
+                $element->classes[] = 'menu-item-has-children';
+            }
+        }
+
+        // Call parent display_element
+        parent::display_element( $element, $children_elements, $max_depth, $depth, $args, $output );
     }
 }
