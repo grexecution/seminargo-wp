@@ -1211,23 +1211,35 @@ class Seminargo_Hotel_Importer {
             ] );
 
             if ( is_wp_error( $response ) ) {
-                throw new Exception( 'API Error: ' . $response->get_error_message() );
+                $error_msg = 'API Error at skip=' . $skip . ': ' . $response->get_error_message();
+                $this->log( 'error', '❌ ' . $error_msg );
+                throw new Exception( $error_msg );
+            }
+
+            $http_code = wp_remote_retrieve_response_code( $response );
+            if ( $http_code !== 200 ) {
+                $error_msg = 'HTTP Error ' . $http_code . ' at skip=' . $skip;
+                $this->log( 'error', '❌ ' . $error_msg );
+                throw new Exception( $error_msg );
             }
 
             $body = wp_remote_retrieve_body( $response );
             $data = json_decode( $body );
 
             if ( isset( $data->errors ) ) {
-                throw new Exception( 'GraphQL Error: ' . json_encode( $data->errors ) );
+                $error_msg = 'GraphQL Error at skip=' . $skip . ': ' . json_encode( $data->errors );
+                $this->log( 'error', '❌ ' . $error_msg );
+                throw new Exception( $error_msg );
             }
 
             $batch_hotels = $data->data->hotelList ?? [];
             $batch_count = count( $batch_hotels );
 
-            $this->log( 'info', '✅ Fetched ' . $batch_count . ' hotels in this batch' );
+            $this->log( 'info', '✅ Fetched ' . $batch_count . ' hotels in this batch (total so far: ' . ( count( $all_hotels ) + $batch_count ) . ')' );
 
             if ( $batch_count === 0 ) {
                 // No more hotels to fetch
+                $this->log( 'info', '🏁 Reached end of hotel list (batch returned 0 hotels)' );
                 $has_more = false;
             } else {
                 // Add to collection
@@ -1236,6 +1248,7 @@ class Seminargo_Hotel_Importer {
 
                 // If we got fewer hotels than the batch size, we're done
                 if ( $batch_count < $batch_size ) {
+                    $this->log( 'info', '🏁 Reached end of hotel list (batch returned ' . $batch_count . ' < ' . $batch_size . ')' );
                     $has_more = false;
                 } else {
                     // Small delay between batches to not overload the API (0.5 seconds)
