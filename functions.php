@@ -157,6 +157,11 @@ if ( file_exists( SEMINARGO_INC_PATH . 'hotel-importer.php' ) ) {
     require SEMINARGO_INC_PATH . 'hotel-importer.php';
 }
 
+// WP-CLI Hotel import command
+if ( file_exists( SEMINARGO_INC_PATH . 'cli-hotel-import.php' ) ) {
+    require SEMINARGO_INC_PATH . 'cli-hotel-import.php';
+}
+
 // Collection post type (SEO landing pages)
 if ( file_exists( SEMINARGO_INC_PATH . 'post-type-collection.php' ) ) {
     require SEMINARGO_INC_PATH . 'post-type-collection.php';
@@ -500,3 +505,630 @@ function seminargo_filter_ajax_query( $query ) {
     return $query;
 }
 add_filter( 'ajax_query_attachments_args', 'seminargo_filter_ajax_query' );
+
+/**
+ * ============================================
+ *  COLLECTION ICON SELECTOR
+ * ============================================
+ */
+
+/**
+ * Get available icon options for collections
+ */
+function seminargo_get_collection_icons() {
+    return array(
+        'seminar' => array(
+            'name' => 'Seminar / Schulung',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>'
+        ),
+        'spa' => array(
+            'name' => 'Seminar & Spa / Wellness',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>'
+        ),
+        'tagung' => array(
+            'name' => 'Tagung / Meeting',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>'
+        ),
+        'veranstaltung' => array(
+            'name' => 'Veranstaltung / Event',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>'
+        ),
+        'workshop' => array(
+            'name' => 'Workshop / Training',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>'
+        ),
+        'konferenz' => array(
+            'name' => 'Konferenz / Großveranstaltung',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>'
+        ),
+        'weihnachtsfeier' => array(
+            'name' => 'Weihnachtsfeier',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle><path d="M12 14l-3-3m6 0l-3 3m0-3v6"></path></svg>'
+        ),
+        'firmenfeier' => array(
+            'name' => 'Firmenfeier / Betriebsfeier',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>'
+        ),
+        'incentive' => array(
+            'name' => 'Incentive / Teambuilding',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'
+        ),
+        'messe' => array(
+            'name' => 'Messe / Ausstellung',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>'
+        ),
+        'hochzeit' => array(
+            'name' => 'Hochzeit / Feier',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
+        ),
+        'geburtstag' => array(
+            'name' => 'Geburtstag / Jubiläum',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="14" rx="2"></rect><path d="M12 2v6M8 2v6M16 2v6"></path></svg>'
+        ),
+        'outdoor' => array(
+            'name' => 'Outdoor Event',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 20h18M5.6 20l6.4-9 6.4 9M12 11V3"></path></svg>'
+        ),
+        'produktpraesentation' => array(
+            'name' => 'Produktpräsentation',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
+        ),
+        'gala' => array(
+            'name' => 'Gala / Abendveranstaltung',
+            'svg' => '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'
+        ),
+    );
+}
+
+/**
+ * Add meta box for collection icon selection
+ */
+function seminargo_add_collection_icon_meta_box() {
+    add_meta_box(
+        'collection_icon_meta_box',
+        'Collection Icon',
+        'seminargo_collection_icon_meta_box_callback',
+        'collection',
+        'side',
+        'default'
+    );
+}
+add_action( 'add_meta_boxes', 'seminargo_add_collection_icon_meta_box' );
+
+/**
+ * Collection icon meta box callback
+ */
+function seminargo_collection_icon_meta_box_callback( $post ) {
+    wp_nonce_field( 'seminargo_collection_icon_nonce', 'seminargo_collection_icon_nonce' );
+
+    $selected_icon = get_post_meta( $post->ID, 'collection_icon', true );
+    $icons = seminargo_get_collection_icons();
+
+    ?>
+    <style>
+        .icon-selector-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .icon-option {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .icon-option:hover {
+            border-color: #AC2A6E;
+            background: #f9f9f9;
+        }
+        .icon-option.selected {
+            border-color: #AC2A6E;
+            background: rgba(172, 42, 110, 0.05);
+        }
+        .icon-option input[type="radio"] {
+            margin-right: 10px;
+        }
+        .icon-preview {
+            width: 32px;
+            height: 32px;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        .icon-preview svg {
+            width: 100%;
+            height: 100%;
+            stroke: #AC2A6E;
+        }
+        .icon-name {
+            font-size: 13px;
+            font-weight: 500;
+        }
+    </style>
+
+    <div class="icon-selector-grid">
+        <?php foreach ( $icons as $key => $icon ) : ?>
+            <label class="icon-option <?php echo ( $selected_icon === $key ) ? 'selected' : ''; ?>">
+                <input
+                    type="radio"
+                    name="collection_icon"
+                    value="<?php echo esc_attr( $key ); ?>"
+                    <?php checked( $selected_icon, $key ); ?>
+                    onchange="document.querySelectorAll('.icon-option').forEach(el => el.classList.remove('selected')); this.closest('.icon-option').classList.add('selected');"
+                >
+                <div class="icon-preview">
+                    <?php echo $icon['svg']; ?>
+                </div>
+                <span class="icon-name"><?php echo esc_html( $icon['name'] ); ?></span>
+            </label>
+        <?php endforeach; ?>
+    </div>
+
+    <p style="margin-top: 15px; font-size: 12px; color: #666;">
+        Wählen Sie ein Icon für diese Collection. Wird auf der Homepage in der "Veranstaltungsarten" Sektion angezeigt.
+    </p>
+    <?php
+}
+
+/**
+ * Save collection icon meta
+ */
+function seminargo_save_collection_icon_meta( $post_id ) {
+    if ( ! isset( $_POST['seminargo_collection_icon_nonce'] ) ||
+         ! wp_verify_nonce( $_POST['seminargo_collection_icon_nonce'], 'seminargo_collection_icon_nonce' ) ) {
+        return;
+    }
+
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        return;
+    }
+
+    if ( isset( $_POST['collection_icon'] ) ) {
+        update_post_meta( $post_id, 'collection_icon', sanitize_text_field( $_POST['collection_icon'] ) );
+    }
+}
+add_action( 'save_post_collection', 'seminargo_save_collection_icon_meta' );
+
+/**
+ * ============================================
+ *  COLLECTION HOME EXCERPT META BOX
+ * ============================================
+ */
+
+/**
+ * Add Home Excerpt meta box to collection post type
+ */
+function seminargo_add_collection_home_excerpt_meta_box() {
+    add_meta_box(
+        'collection_home_excerpt',
+        'Homepage Kurztext',
+        'seminargo_collection_home_excerpt_callback',
+        'collection',
+        'normal',
+        'default'
+    );
+}
+add_action( 'add_meta_boxes', 'seminargo_add_collection_home_excerpt_meta_box' );
+
+/**
+ * Home Excerpt meta box callback
+ */
+function seminargo_collection_home_excerpt_callback( $post ) {
+    wp_nonce_field( 'seminargo_home_excerpt_nonce', 'seminargo_home_excerpt_nonce' );
+
+    $home_excerpt = get_post_meta( $post->ID, 'home_excerpt', true );
+    ?>
+    <div style="padding: 10px 0;">
+        <p style="margin-bottom: 10px; color: #666;">
+            <strong>Hinweis:</strong> Dieser Text wird auf der Homepage in der Kachel angezeigt (unterhalb des Titels).
+        </p>
+        <textarea
+            name="home_excerpt"
+            id="home_excerpt"
+            rows="3"
+            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+            placeholder="z.B. Perfekte Locations für Ihre Seminare und Schulungen"
+        ><?php echo esc_textarea( $home_excerpt ); ?></textarea>
+        <p style="margin-top: 8px; color: #666; font-size: 13px;">
+            Empfohlene Länge: 50-80 Zeichen für optimale Darstellung
+        </p>
+    </div>
+    <?php
+}
+
+/**
+ * Save Home Excerpt meta
+ */
+function seminargo_save_collection_home_excerpt_meta( $post_id ) {
+    // Check nonce
+    if ( ! isset( $_POST['seminargo_home_excerpt_nonce'] ) ||
+         ! wp_verify_nonce( $_POST['seminargo_home_excerpt_nonce'], 'seminargo_home_excerpt_nonce' ) ) {
+        return;
+    }
+
+    // Check autosave
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+
+    // Check permissions
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        return;
+    }
+
+    // Save home excerpt
+    if ( isset( $_POST['home_excerpt'] ) ) {
+        $home_excerpt = sanitize_textarea_field( $_POST['home_excerpt'] );
+        update_post_meta( $post_id, 'home_excerpt', $home_excerpt );
+    } else {
+        delete_post_meta( $post_id, 'home_excerpt' );
+    }
+}
+add_action( 'save_post_collection', 'seminargo_save_collection_home_excerpt_meta' );
+
+/**
+ * ============================================
+ *  HOMEPAGE COLLECTIONS META BOX
+ * ============================================
+ */
+
+/**
+ * Add meta box for homepage collection selection
+ */
+function seminargo_add_homepage_meta_box() {
+    add_meta_box(
+        'homepage_collections_meta_box',
+        'Homepage Collection Einstellungen',
+        'seminargo_homepage_collections_meta_box_callback',
+        'page',
+        'normal',
+        'high'
+    );
+}
+add_action( 'add_meta_boxes', 'seminargo_add_homepage_meta_box' );
+
+/**
+ * Meta box callback function
+ */
+function seminargo_homepage_collections_meta_box_callback( $post ) {
+    // Only show on front page
+    if ( get_option( 'page_on_front' ) != $post->ID && ! is_front_page() ) {
+        return;
+    }
+
+    // Add nonce for security
+    wp_nonce_field( 'seminargo_homepage_collections_nonce', 'seminargo_homepage_collections_nonce' );
+
+    // Get current values
+    $event_type_collections = get_post_meta( $post->ID, 'event_type_collections', true );
+    $popular_location_collections = get_post_meta( $post->ID, 'popular_location_collections', true );
+
+    // Convert to arrays
+    $selected_event_types = ! empty( $event_type_collections ) ? array_map( 'intval', explode( ',', $event_type_collections ) ) : array();
+    $selected_locations = ! empty( $popular_location_collections ) ? array_map( 'intval', explode( ',', $popular_location_collections ) ) : array();
+
+    // Query all collections
+    $all_collections = get_posts( array(
+        'post_type'      => 'collection',
+        'posts_per_page' => -1,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+        'post_status'    => 'publish',
+    ) );
+
+    // Create lookup array for collection titles
+    $collections_lookup = array();
+    foreach ( $all_collections as $collection ) {
+        $collections_lookup[ $collection->ID ] = $collection->post_title;
+    }
+
+    ?>
+    <div class="homepage-collections-settings">
+        <style>
+            .homepage-collections-settings h3 {
+                margin-top: 20px;
+                margin-bottom: 10px;
+                padding-bottom: 10px;
+                border-bottom: 1px solid #ddd;
+            }
+            .helper-text {
+                color: #666;
+                font-style: italic;
+                margin-bottom: 15px;
+            }
+            .collections-manager {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+                margin-bottom: 30px;
+            }
+            .selected-collections {
+                background: #f9f9f9;
+                padding: 15px;
+                border-radius: 6px;
+                border: 2px solid #AC2A6E;
+            }
+            .available-collections {
+                background: #fff;
+                padding: 15px;
+                border-radius: 6px;
+                border: 1px solid #ddd;
+            }
+            .collections-manager h4 {
+                margin-top: 0;
+                font-size: 14px;
+                font-weight: 600;
+                color: #333;
+            }
+            .sortable-list {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                min-height: 50px;
+            }
+            .sortable-list li {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 10px;
+                margin-bottom: 8px;
+                background: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                cursor: move;
+                transition: all 0.2s;
+            }
+            .sortable-list li:hover {
+                background: #f0f0f0;
+                border-color: #AC2A6E;
+            }
+            .sortable-list li.ui-sortable-helper {
+                opacity: 0.8;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+            .collection-item-handle {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex: 1;
+            }
+            .drag-handle {
+                color: #999;
+                cursor: move;
+            }
+            .remove-btn {
+                padding: 4px 8px;
+                background: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            .remove-btn:hover {
+                background: #c82333;
+            }
+            .add-btn {
+                padding: 4px 8px;
+                background: #AC2A6E;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            .add-btn:hover {
+                background: #8A1F56;
+            }
+            .available-list li {
+                cursor: pointer;
+            }
+            .collection-count {
+                color: #AC2A6E;
+                font-weight: 600;
+                font-size: 12px;
+            }
+        </style>
+
+        <!-- Event Types Section -->
+        <h3>Veranstaltungsarten Sektion (Event Types)</h3>
+        <p class="helper-text">Ziehen Sie Collections, um die Reihenfolge zu ändern. Max. 6 Collections. <span class="collection-count" id="event-types-count">(<?php echo count( $selected_event_types ); ?>/6)</span></p>
+
+        <div class="collections-manager">
+            <div class="selected-collections">
+                <h4>✓ Ausgewählte Collections (Reihenfolge änderbar)</h4>
+                <ul class="sortable-list" id="selected-event-types">
+                    <?php foreach ( $selected_event_types as $collection_id ) : ?>
+                        <?php if ( isset( $collections_lookup[ $collection_id ] ) ) : ?>
+                            <li data-id="<?php echo esc_attr( $collection_id ); ?>">
+                                <div class="collection-item-handle">
+                                    <span class="drag-handle">⋮⋮</span>
+                                    <span><?php echo esc_html( $collections_lookup[ $collection_id ] ); ?></span>
+                                </div>
+                                <button type="button" class="remove-btn" onclick="removeCollection(this, 'event')">×</button>
+                            </li>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </ul>
+                <input type="hidden" name="event_type_collections_ordered" id="event-type-collections-input" value="<?php echo esc_attr( implode( ',', $selected_event_types ) ); ?>">
+            </div>
+
+            <div class="available-collections">
+                <h4>Verfügbare Collections</h4>
+                <ul class="sortable-list available-list" id="available-event-types">
+                    <?php foreach ( $all_collections as $collection ) : ?>
+                        <?php if ( ! in_array( $collection->ID, $selected_event_types ) ) : ?>
+                            <li data-id="<?php echo esc_attr( $collection->ID ); ?>">
+                                <div class="collection-item-handle">
+                                    <span><?php echo esc_html( $collection->post_title ); ?></span>
+                                </div>
+                                <button type="button" class="add-btn" onclick="addCollection(this, 'event')">+</button>
+                            </li>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Popular Locations Section -->
+        <h3>Beliebte Locations Sektion (Popular Locations)</h3>
+        <p class="helper-text">Ziehen Sie Collections, um die Reihenfolge zu ändern. Max. 6 Collections. <span class="collection-count" id="locations-count">(<?php echo count( $selected_locations ); ?>/6)</span></p>
+
+        <div class="collections-manager">
+            <div class="selected-collections">
+                <h4>✓ Ausgewählte Collections (Reihenfolge änderbar)</h4>
+                <ul class="sortable-list" id="selected-locations">
+                    <?php foreach ( $selected_locations as $collection_id ) : ?>
+                        <?php if ( isset( $collections_lookup[ $collection_id ] ) ) : ?>
+                            <li data-id="<?php echo esc_attr( $collection_id ); ?>">
+                                <div class="collection-item-handle">
+                                    <span class="drag-handle">⋮⋮</span>
+                                    <span><?php echo esc_html( $collections_lookup[ $collection_id ] ); ?></span>
+                                </div>
+                                <button type="button" class="remove-btn" onclick="removeCollection(this, 'location')">×</button>
+                            </li>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </ul>
+                <input type="hidden" name="popular_location_collections_ordered" id="location-collections-input" value="<?php echo esc_attr( implode( ',', $selected_locations ) ); ?>">
+            </div>
+
+            <div class="available-collections">
+                <h4>Verfügbare Collections</h4>
+                <ul class="sortable-list available-list" id="available-locations">
+                    <?php foreach ( $all_collections as $collection ) : ?>
+                        <?php if ( ! in_array( $collection->ID, $selected_locations ) ) : ?>
+                            <li data-id="<?php echo esc_attr( $collection->ID ); ?>">
+                                <div class="collection-item-handle">
+                                    <span><?php echo esc_html( $collection->post_title ); ?></span>
+                                </div>
+                                <button type="button" class="add-btn" onclick="addCollection(this, 'location')">+</button>
+                            </li>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+
+        <script>
+        jQuery(document).ready(function($) {
+            // Make lists sortable
+            $('#selected-event-types, #selected-locations').sortable({
+                handle: '.drag-handle',
+                opacity: 0.8,
+                cursor: 'move',
+                update: function(event, ui) {
+                    updateHiddenInput($(this));
+                }
+            });
+        });
+
+        function updateHiddenInput(list) {
+            var ids = [];
+            list.find('li').each(function() {
+                ids.push(jQuery(this).data('id'));
+            });
+
+            var inputId = list.attr('id') === 'selected-event-types' ? 'event-type-collections-input' : 'location-collections-input';
+            var countId = list.attr('id') === 'selected-event-types' ? 'event-types-count' : 'locations-count';
+
+            jQuery('#' + inputId).val(ids.join(','));
+            jQuery('#' + countId).text('(' + ids.length + '/6)');
+        }
+
+        function addCollection(button, type) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('.collection-item-handle span').text();
+
+            var selectedList = type === 'event' ? jQuery('#selected-event-types') : jQuery('#selected-locations');
+
+            // Check if max 6
+            if (selectedList.find('li').length >= 6) {
+                alert('Maximal 6 Collections erlaubt!');
+                return;
+            }
+
+            // Add to selected
+            var newLi = '<li data-id="' + id + '">' +
+                '<div class="collection-item-handle">' +
+                '<span class="drag-handle">⋮⋮</span>' +
+                '<span>' + title + '</span>' +
+                '</div>' +
+                '<button type="button" class="remove-btn" onclick="removeCollection(this, \'' + type + '\')">×</button>' +
+                '</li>';
+
+            selectedList.append(newLi);
+            li.remove();
+            updateHiddenInput(selectedList);
+        }
+
+        function removeCollection(button, type) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('.collection-item-handle span:last').text();
+
+            var availableList = type === 'event' ? jQuery('#available-event-types') : jQuery('#available-locations');
+            var selectedList = type === 'event' ? jQuery('#selected-event-types') : jQuery('#selected-locations');
+
+            // Add back to available
+            var newLi = '<li data-id="' + id + '">' +
+                '<div class="collection-item-handle">' +
+                '<span>' + title + '</span>' +
+                '</div>' +
+                '<button type="button" class="add-btn" onclick="addCollection(this, \'' + type + '\')">+</button>' +
+                '</li>';
+
+            availableList.append(newLi);
+            li.remove();
+            updateHiddenInput(selectedList);
+        }
+        </script>
+    </div>
+    <?php
+}
+
+/**
+ * Save meta box data
+ */
+function seminargo_save_homepage_collections_meta( $post_id ) {
+    // Check nonce
+    if ( ! isset( $_POST['seminargo_homepage_collections_nonce'] ) ||
+         ! wp_verify_nonce( $_POST['seminargo_homepage_collections_nonce'], 'seminargo_homepage_collections_nonce' ) ) {
+        return;
+    }
+
+    // Check autosave
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+
+    // Check permissions
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        return;
+    }
+
+    // Save event type collections (ordered)
+    if ( isset( $_POST['event_type_collections_ordered'] ) && ! empty( $_POST['event_type_collections_ordered'] ) ) {
+        $event_types = sanitize_text_field( $_POST['event_type_collections_ordered'] );
+        update_post_meta( $post_id, 'event_type_collections', $event_types );
+    } else {
+        delete_post_meta( $post_id, 'event_type_collections' );
+    }
+
+    // Save popular location collections (ordered)
+    if ( isset( $_POST['popular_location_collections_ordered'] ) && ! empty( $_POST['popular_location_collections_ordered'] ) ) {
+        $locations = sanitize_text_field( $_POST['popular_location_collections_ordered'] );
+        update_post_meta( $post_id, 'popular_location_collections', $locations );
+    } else {
+        delete_post_meta( $post_id, 'popular_location_collections' );
+    }
+}
+add_action( 'save_post', 'seminargo_save_homepage_collections_meta' );

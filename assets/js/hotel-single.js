@@ -531,8 +531,76 @@
         }
     };
 
+    // Prevent unwanted anchor tag wrapping in iframe
+    const initIframeProtection = () => {
+        // Only run if in iframe
+        if (window.self === window.top) return;
+
+        console.log('[Iframe Protection] Running in iframe, monitoring for unwanted DOM manipulation...');
+
+        // Function to remove unwanted anchor wrappers
+        const removeUnwantedAnchors = () => {
+            // Find the hotel-features-categories container
+            const featuresContainer = document.querySelector('.hotel-features-categories');
+            if (!featuresContainer) return;
+
+            // Check if it's wrapped in an anchor tag
+            const parentAnchor = featuresContainer.closest('a[href*="#seminar"]');
+            if (parentAnchor) {
+                console.warn('[Iframe Protection] Detected unwanted anchor wrapper, removing...', parentAnchor);
+
+                // Unwrap: replace anchor with its children
+                const parent = parentAnchor.parentNode;
+                while (parentAnchor.firstChild) {
+                    parent.insertBefore(parentAnchor.firstChild, parentAnchor);
+                }
+                parent.removeChild(parentAnchor);
+            }
+
+            // Also check for feature-category sections individually
+            const featureCategories = document.querySelectorAll('.feature-category');
+            featureCategories.forEach(category => {
+                const categoryAnchor = category.closest('a[href*="#seminar"]');
+                if (categoryAnchor) {
+                    console.warn('[Iframe Protection] Detected unwanted anchor on category, removing...', categoryAnchor);
+                    const parent = categoryAnchor.parentNode;
+                    while (categoryAnchor.firstChild) {
+                        parent.insertBefore(categoryAnchor.firstChild, categoryAnchor);
+                    }
+                    parent.removeChild(categoryAnchor);
+                }
+            });
+        };
+
+        // Run immediately
+        removeUnwantedAnchors();
+
+        // Monitor for DOM changes with MutationObserver
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                    removeUnwantedAnchors();
+                }
+            });
+        });
+
+        // Observe the entire document for changes
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['href']
+        });
+
+        // Also run after a short delay (in case parent app manipulates after load)
+        setTimeout(removeUnwantedAnchors, 100);
+        setTimeout(removeUnwantedAnchors, 500);
+        setTimeout(removeUnwantedAnchors, 1000);
+    };
+
     // Initialize all features
     const init = () => {
+        initIframeProtection(); // Run FIRST to catch early manipulation
         initWishlist();
         initBookingForm();
         initGalleryStatic();

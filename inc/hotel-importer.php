@@ -18,6 +18,8 @@ class Seminargo_Hotel_Importer {
     private $log_option = 'seminargo_hotels_import_log';
     private $last_import_option = 'seminargo_hotels_last_import';
     private $imported_ids_option = 'seminargo_hotels_imported_ids';
+    private $auto_import_enabled_option = 'seminargo_auto_import_enabled';
+    private $auto_import_progress_option = 'seminargo_auto_import_progress';
 
     public function __construct() {
         // Admin menu
@@ -27,10 +29,13 @@ class Seminargo_Hotel_Importer {
         add_action( 'wp_ajax_seminargo_fetch_hotels', [ $this, 'ajax_fetch_hotels' ] );
         add_action( 'wp_ajax_seminargo_get_logs', [ $this, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_seminargo_clear_logs', [ $this, 'ajax_clear_logs' ] );
+        add_action( 'wp_ajax_seminargo_toggle_auto_import', [ $this, 'ajax_toggle_auto_import' ] );
+        add_action( 'wp_ajax_seminargo_reset_auto_import', [ $this, 'ajax_reset_auto_import' ] );
+        add_action( 'wp_ajax_seminargo_get_auto_import_status', [ $this, 'ajax_get_auto_import_status' ] );
 
         // Cron
         add_action( 'init', [ $this, 'register_cron' ] );
-        add_action( 'seminargo_hotels_cron', [ $this, 'run_import' ] );
+        add_action( 'seminargo_hotels_cron', [ $this, 'run_auto_import_batch' ] );
 
         // Register hotel post type if not exists
         add_action( 'init', [ $this, 'register_post_type' ] );
@@ -317,8 +322,15 @@ class Seminargo_Hotel_Importer {
      * Register cron job
      */
     public function register_cron() {
-        if ( ! wp_next_scheduled( 'seminargo_hotels_cron' ) ) {
-            wp_schedule_event( time(), 'twicedaily', 'seminargo_hotels_cron' );
+        $auto_import_enabled = get_option( $this->auto_import_enabled_option, false );
+        $is_scheduled = wp_next_scheduled( 'seminargo_hotels_cron' );
+
+        if ( $auto_import_enabled && ! $is_scheduled ) {
+            // Schedule to run every hour when auto-import is enabled
+            wp_schedule_event( time(), 'hourly', 'seminargo_hotels_cron' );
+        } elseif ( ! $auto_import_enabled && $is_scheduled ) {
+            // Unschedule if auto-import is disabled
+            wp_clear_scheduled_hook( 'seminargo_hotels_cron' );
         }
     }
 
@@ -751,7 +763,7 @@ class Seminargo_Hotel_Importer {
         <div class="wrap">
             <h1>🏨 <?php esc_html_e( 'Hotel Import / Sync', 'seminargo' ); ?></h1>
 
-            <div class="seminargo-import-dashboard" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+            <div class="seminargo-import-dashboard" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 20px;">
 
                 <!-- Status Card -->
                 <div class="card" style="padding: 20px;">
@@ -825,6 +837,31 @@ class Seminargo_Hotel_Importer {
                         <li><?php esc_html_e( 'Hotels missing from API → Set to draft status', 'seminargo' ); ?></li>
                         <li><?php esc_html_e( 'Images are downloaded and attached automatically', 'seminargo' ); ?></li>
                     </ul>
+                </div>
+
+                <!-- Auto-Import Card -->
+                <div class="card" style="padding: 20px;">
+                    <h2>🤖 <?php esc_html_e( 'Automatic Import', 'seminargo' ); ?></h2>
+                    <p style="color: #666; font-size: 13px; margin-top: 10px;">
+                        <?php esc_html_e( 'Automatically import ALL hotels in batches (500 at a time) every hour. Perfect for handling 40,000+ hotels without timeouts!', 'seminargo' ); ?>
+                    </p>
+
+                    <div id="auto-import-status" style="margin-top: 15px;">
+                        <p><?php esc_html_e( 'Loading status...', 'seminargo' ); ?></p>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <button id="btn-toggle-auto-import" class="button button-primary">
+                            🔄 <?php esc_html_e( 'Enable Auto-Import', 'seminargo' ); ?>
+                        </button>
+                        <button id="btn-reset-progress" class="button" style="margin-left: 10px;">
+                            ↻ <?php esc_html_e( 'Reset Progress', 'seminargo' ); ?>
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; border-left: 3px solid #2271b1; border-radius: 3px;">
+                        <strong>💡 Tip:</strong> <?php esc_html_e( 'Enable this for production sites with thousands of hotels. Runs hourly in the background.', 'seminargo' ); ?>
+                    </div>
                 </div>
             </div>
 
@@ -986,8 +1023,82 @@ class Seminargo_Hotel_Importer {
                 loadLogs();
             });
 
-            // Initial load
+            // Auto-Import Controls
+            function loadAutoImportStatus() {
+                $.post(ajaxurl, { action: 'seminargo_get_auto_import_status' }, function(response) {
+                    if (response.success) {
+                        const data = response.data;
+                        const enabled = data.enabled;
+                        const progress = data.progress;
+
+                        // Update button
+                        const $btn = $('#btn-toggle-auto-import');
+                        if (enabled) {
+                            $btn.text('⏸️ <?php echo esc_js( __( 'Disable Auto-Import', 'seminargo' ) ); ?>').removeClass('button-primary').addClass('button-secondary');
+                        } else {
+                            $btn.text('▶️ <?php echo esc_js( __( 'Enable Auto-Import', 'seminargo' ) ); ?>').addClass('button-primary').removeClass('button-secondary');
+                        }
+
+                        // Update status display
+                        let statusHTML = '<table class="widefat" style="font-size: 12px;">';
+                        statusHTML += '<tr><td><strong>Status:</strong></td><td>' + (enabled ? '<span style="color: #51cf66;">● Active</span>' : '<span style="color: #868e96;">○ Disabled</span>') + '</td></tr>';
+                        statusHTML += '<tr><td><strong>Progress:</strong></td><td>' + progress.offset + ' hotels processed</td></tr>';
+                        statusHTML += '<tr><td><strong>Total Imported:</strong></td><td>' + progress.total_imported + ' hotels</td></tr>';
+                        statusHTML += '<tr><td><strong>Status:</strong></td><td>' + (progress.is_complete ? '<span style="color: #51cf66;">✅ Complete</span>' : '<span style="color: #2271b1;">🔄 In Progress</span>') + '</td></tr>';
+
+                        if (enabled) {
+                            statusHTML += '<tr><td><strong>Next Run:</strong></td><td>' + data.next_run_formatted + '</td></tr>';
+                        }
+
+                        if (progress.last_run > 0) {
+                            const lastRun = new Date(progress.last_run * 1000);
+                            statusHTML += '<tr><td><strong>Last Run:</strong></td><td>' + lastRun.toLocaleString() + '</td></tr>';
+                        }
+
+                        statusHTML += '</table>';
+
+                        $('#auto-import-status').html(statusHTML);
+                    }
+                });
+            }
+
+            $('#btn-toggle-auto-import').on('click', function() {
+                const $btn = $(this);
+                const wasEnabled = $btn.text().includes('Disable');
+                const newState = !wasEnabled;
+
+                $btn.prop('disabled', true);
+
+                $.post(ajaxurl, {
+                    action: 'seminargo_toggle_auto_import',
+                    enabled: newState
+                }, function(response) {
+                    $btn.prop('disabled', false);
+                    if (response.success) {
+                        loadAutoImportStatus();
+                        loadLogs();
+                    } else {
+                        alert('Error: ' + response.data);
+                    }
+                });
+            });
+
+            $('#btn-reset-progress').on('click', function() {
+                if (confirm('<?php echo esc_js( __( 'Reset auto-import progress? This will start the import from the beginning.', 'seminargo' ) ); ?>')) {
+                    $.post(ajaxurl, { action: 'seminargo_reset_auto_import' }, function(response) {
+                        if (response.success) {
+                            loadAutoImportStatus();
+                        }
+                    });
+                }
+            });
+
+            // Initial loads
             loadLogs();
+            loadAutoImportStatus();
+
+            // Refresh auto-import status every 30 seconds
+            setInterval(loadAutoImportStatus, 30000);
         });
         </script>
         <?php
@@ -1001,10 +1112,15 @@ class Seminargo_Hotel_Importer {
             wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
         }
 
-        // Increase memory and execution time for large imports
-        @ini_set( 'memory_limit', '512M' );
-        @ini_set( 'max_execution_time', 600 ); // 10 minutes
-        @set_time_limit( 600 );
+        // Increase memory and execution time for FULL import (40k+ hotels)
+        @ini_set( 'memory_limit', '1024M' );
+        @ini_set( 'max_execution_time', 0 ); // No limit
+        @set_time_limit( 0 ); // No limit
+
+        // Prevent timeouts by keeping connection alive
+        @apache_setenv( 'no-gzip', 1 );
+        @ini_set( 'zlib.output_compression', 0 );
+        @ini_set( 'implicit_flush', 1 );
 
         $result = $this->run_import();
         wp_send_json_success( $result );
@@ -1067,10 +1183,11 @@ class Seminargo_Hotel_Importer {
     private function fetch_hotels_from_api() {
         $all_hotels = [];
         $batch_size = 200; // Fetch 200 hotels per batch (balanced between performance and reliability)
+        $max_hotels = PHP_INT_MAX; // No limit - fetch ALL hotels
         $skip = 0;
         $has_more = true;
 
-        $this->log( 'info', '📥 Starting batched hotel fetch (batch size: ' . $batch_size . ')' );
+        $this->log( 'info', '📥 Starting batched hotel fetch (batch size: ' . $batch_size . ', fetching ALL hotels)' );
 
         while ( $has_more ) {
             $this->log( 'info', '📦 Fetching batch: skip=' . $skip . ', limit=' . $batch_size );
@@ -1195,6 +1312,9 @@ class Seminargo_Hotel_Importer {
                 // If we got fewer hotels than the batch size, we're done
                 if ( $batch_count < $batch_size ) {
                     $has_more = false;
+                } else {
+                    // Small delay between batches to not overload the API (0.5 seconds)
+                    usleep( 500000 );
                 }
             }
         }
@@ -1781,6 +1901,249 @@ class Seminargo_Hotel_Importer {
                 update_field( 'gallery', $gallery_ids, $post_id );
             }
         }
+    }
+
+    /**
+     * Run automatic batch import (called by cron)
+     * Imports hotels in batches to handle large datasets
+     */
+    public function run_auto_import_batch() {
+        // Check if auto-import is enabled
+        if ( ! get_option( $this->auto_import_enabled_option, false ) ) {
+            return;
+        }
+
+        // Increase limits for cron
+        @ini_set( 'memory_limit', '512M' );
+        @ini_set( 'max_execution_time', 300 ); // 5 minutes for cron
+
+        // Get current progress
+        $progress = get_option( $this->auto_import_progress_option, [
+            'offset' => 0,
+            'total_imported' => 0,
+            'is_complete' => false,
+            'last_run' => 0,
+        ] );
+
+        // Don't run if already complete
+        if ( $progress['is_complete'] ) {
+            return;
+        }
+
+        $batch_size = 500; // Import 500 hotels per cron run
+        $offset = $progress['offset'];
+
+        $this->log( 'info', "🤖 Auto-import batch started (offset: {$offset}, batch: {$batch_size})" );
+
+        try {
+            // Fetch batch from API
+            $hotels = $this->fetch_hotels_batch_from_api( $offset, $batch_size );
+
+            if ( empty( $hotels ) ) {
+                // No more hotels - mark as complete
+                $progress['is_complete'] = true;
+                $progress['last_run'] = time();
+                update_option( $this->auto_import_progress_option, $progress );
+                $this->log( 'success', '✅ Auto-import completed! Total: ' . $progress['total_imported'] . ' hotels' );
+                return;
+            }
+
+            $this->log( 'info', '📦 Fetched ' . count( $hotels ) . ' hotels in this batch' );
+
+            // Process each hotel
+            $created = 0;
+            $updated = 0;
+            $errors = 0;
+
+            foreach ( $hotels as $hotel ) {
+                try {
+                    $result = $this->process_hotel( $hotel );
+                    if ( $result === 'created' ) {
+                        $created++;
+                    } elseif ( $result === 'updated' ) {
+                        $updated++;
+                    }
+                } catch ( Exception $e ) {
+                    $errors++;
+                    $this->log( 'error', '❌ Error processing hotel: ' . $e->getMessage(), $hotel->businessName ?? 'Unknown' );
+                }
+            }
+
+            // Update progress
+            $progress['offset'] += count( $hotels );
+            $progress['total_imported'] += $created + $updated;
+            $progress['last_run'] = time();
+
+            // If we got fewer hotels than batch_size, we're done
+            if ( count( $hotels ) < $batch_size ) {
+                $progress['is_complete'] = true;
+                $this->log( 'success', '✅ Auto-import completed! Total: ' . $progress['total_imported'] . ' hotels' );
+            }
+
+            update_option( $this->auto_import_progress_option, $progress );
+
+            $this->log( 'success', "✅ Batch complete: {$created} created, {$updated} updated, {$errors} errors. Progress: {$progress['offset']} hotels" );
+
+        } catch ( Exception $e ) {
+            $this->log( 'error', '❌ Auto-import batch failed: ' . $e->getMessage() );
+        }
+    }
+
+    /**
+     * Fetch a specific batch of hotels from API
+     */
+    private function fetch_hotels_batch_from_api( $offset, $limit ) {
+        $query = '{
+            hotelList(skip: ' . $offset . ', limit: ' . $limit . ') {
+                id
+                slug
+                refCode
+                name
+                businessName
+                businessAddress1
+                businessAddress2
+                businessAddress3
+                businessAddress4
+                businessEmail
+                businessZip
+                businessCity
+                businessCountry
+                locationLongitude
+                locationLatitude
+                distanceToNearestAirport
+                distanceToNearestRailroadStation
+                rating
+                maxCapacityRooms
+                maxCapacityPeople
+                hasActivePartnerContract
+                texts {
+                    id
+                    details
+                    type
+                    language
+                }
+                attributes {
+                    id
+                    attribute
+                }
+                medias {
+                    id
+                    name
+                    mimeType
+                    width
+                    height
+                    format
+                    path
+                    url
+                    previewUrl
+                }
+                integrations {
+                    directBooking
+                }
+                spaceId
+                space {
+                    name
+                }
+                meetingRooms {
+                    id
+                    name
+                    area
+                    capacityUForm
+                    capacityTheater
+                    capacityParlament
+                    capacityCircle
+                    capacityBankett
+                    capacityCocktail
+                    capacityBlock
+                    facilityId
+                    facility {
+                        id
+                        sku
+                        name
+                        header
+                        details
+                    }
+                }
+            }
+        }';
+
+        $response = wp_remote_post( $this->api_url, [
+            'body'    => json_encode( [ 'query' => $query ] ),
+            'headers' => [ 'Content-Type' => 'application/json' ],
+            'timeout' => 120,
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            throw new Exception( 'API Error: ' . $response->get_error_message() );
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $data = json_decode( $body );
+
+        if ( isset( $data->errors ) ) {
+            throw new Exception( 'GraphQL Error: ' . json_encode( $data->errors ) );
+        }
+
+        return $data->data->hotelList ?? [];
+    }
+
+    /**
+     * AJAX: Toggle auto-import on/off
+     */
+    public function ajax_toggle_auto_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $enabled = isset( $_POST['enabled'] ) && $_POST['enabled'] === 'true';
+        update_option( $this->auto_import_enabled_option, $enabled );
+
+        // Re-register cron (will schedule or unschedule based on $enabled)
+        $this->register_cron();
+
+        wp_send_json_success( [
+            'enabled' => $enabled,
+            'message' => $enabled ? 'Auto-import enabled' : 'Auto-import disabled',
+        ] );
+    }
+
+    /**
+     * AJAX: Reset auto-import progress
+     */
+    public function ajax_reset_auto_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        update_option( $this->auto_import_progress_option, [
+            'offset' => 0,
+            'total_imported' => 0,
+            'is_complete' => false,
+            'last_run' => 0,
+        ] );
+
+        wp_send_json_success( [ 'message' => 'Progress reset' ] );
+    }
+
+    /**
+     * AJAX: Get auto-import status
+     */
+    public function ajax_get_auto_import_status() {
+        $enabled = get_option( $this->auto_import_enabled_option, false );
+        $progress = get_option( $this->auto_import_progress_option, [
+            'offset' => 0,
+            'total_imported' => 0,
+            'is_complete' => false,
+            'last_run' => 0,
+        ] );
+        $next_run = wp_next_scheduled( 'seminargo_hotels_cron' );
+
+        wp_send_json_success( [
+            'enabled' => $enabled,
+            'progress' => $progress,
+            'next_run' => $next_run,
+            'next_run_formatted' => $next_run ? date( 'Y-m-d H:i:s', $next_run ) : 'Not scheduled',
+        ] );
     }
 }
 
