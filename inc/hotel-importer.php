@@ -1041,7 +1041,9 @@ class Seminargo_Hotel_Importer {
         @set_time_limit( 0 ); // No limit
 
         // Prevent timeouts by keeping connection alive
-        @apache_setenv( 'no-gzip', 1 );
+        if ( function_exists( 'apache_setenv' ) ) {
+            @apache_setenv( 'no-gzip', 1 );
+        }
         @ini_set( 'zlib.output_compression', 0 );
         @ini_set( 'implicit_flush', 1 );
 
