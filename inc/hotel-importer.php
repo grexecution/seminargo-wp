@@ -839,28 +839,25 @@ class Seminargo_Hotel_Importer {
                     </ul>
                 </div>
 
-                <!-- Auto-Import Card -->
+                <!-- Import Information Card -->
                 <div class="card" style="padding: 20px;">
-                    <h2>🤖 <?php esc_html_e( 'Automatic Import', 'seminargo' ); ?></h2>
+                    <h2>ℹ️ <?php esc_html_e( 'How Import Works', 'seminargo' ); ?></h2>
                     <p style="color: #666; font-size: 13px; margin-top: 10px;">
-                        <?php esc_html_e( 'Automatically import ALL hotels in batches (500 at a time) every hour. Perfect for handling 40,000+ hotels without timeouts!', 'seminargo' ); ?>
+                        <?php esc_html_e( 'Click "Fetch Now" to import ALL hotels in one complete run. The system will:', 'seminargo' ); ?>
                     </p>
 
-                    <div id="auto-import-status" style="margin-top: 15px;">
-                        <p><?php esc_html_e( 'Loading status...', 'seminargo' ); ?></p>
-                    </div>
-
-                    <div style="margin-top: 15px;">
-                        <button id="btn-toggle-auto-import" class="button button-primary">
-                            🔄 <?php esc_html_e( 'Enable Auto-Import', 'seminargo' ); ?>
-                        </button>
-                        <button id="btn-reset-progress" class="button" style="margin-left: 10px;">
-                            ↻ <?php esc_html_e( 'Reset Progress', 'seminargo' ); ?>
-                        </button>
-                    </div>
+                    <ul style="margin: 15px 0 15px 20px; color: #666; font-size: 13px; line-height: 1.8;">
+                        <li><?php esc_html_e( '✓ Fetch ALL hotels from API (no limits)', 'seminargo' ); ?></li>
+                        <li><?php esc_html_e( '✓ Process in 200-hotel batches', 'seminargo' ); ?></li>
+                        <li><?php esc_html_e( '✓ Pace requests (0.5 second delay between batches)', 'seminargo' ); ?></li>
+                        <li><?php esc_html_e( '✓ Run from start to finish without timeout', 'seminargo' ); ?></li>
+                        <li><?php esc_html_e( '✓ Update existing hotels, create new ones', 'seminargo' ); ?></li>
+                    </ul>
 
                     <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; border-left: 3px solid #2271b1; border-radius: 3px;">
-                        <strong>💡 Tip:</strong> <?php esc_html_e( 'Enable this for production sites with thousands of hotels. Runs hourly in the background.', 'seminargo' ); ?>
+                        <strong>💡 For Production (40,000+ hotels):</strong><br>
+                        <?php esc_html_e( 'Use WP-CLI for better reliability: ', 'seminargo' ); ?>
+                        <code style="background: #fff; padding: 2px 6px; border-radius: 3px; font-size: 12px;">wp seminargo import-hotels --all</code>
                     </div>
                 </div>
             </div>
@@ -1023,82 +1020,8 @@ class Seminargo_Hotel_Importer {
                 loadLogs();
             });
 
-            // Auto-Import Controls
-            function loadAutoImportStatus() {
-                $.post(ajaxurl, { action: 'seminargo_get_auto_import_status' }, function(response) {
-                    if (response.success) {
-                        const data = response.data;
-                        const enabled = data.enabled;
-                        const progress = data.progress;
-
-                        // Update button
-                        const $btn = $('#btn-toggle-auto-import');
-                        if (enabled) {
-                            $btn.text('⏸️ <?php echo esc_js( __( 'Disable Auto-Import', 'seminargo' ) ); ?>').removeClass('button-primary').addClass('button-secondary');
-                        } else {
-                            $btn.text('▶️ <?php echo esc_js( __( 'Enable Auto-Import', 'seminargo' ) ); ?>').addClass('button-primary').removeClass('button-secondary');
-                        }
-
-                        // Update status display
-                        let statusHTML = '<table class="widefat" style="font-size: 12px;">';
-                        statusHTML += '<tr><td><strong>Status:</strong></td><td>' + (enabled ? '<span style="color: #51cf66;">● Active</span>' : '<span style="color: #868e96;">○ Disabled</span>') + '</td></tr>';
-                        statusHTML += '<tr><td><strong>Progress:</strong></td><td>' + progress.offset + ' hotels processed</td></tr>';
-                        statusHTML += '<tr><td><strong>Total Imported:</strong></td><td>' + progress.total_imported + ' hotels</td></tr>';
-                        statusHTML += '<tr><td><strong>Status:</strong></td><td>' + (progress.is_complete ? '<span style="color: #51cf66;">✅ Complete</span>' : '<span style="color: #2271b1;">🔄 In Progress</span>') + '</td></tr>';
-
-                        if (enabled) {
-                            statusHTML += '<tr><td><strong>Next Run:</strong></td><td>' + data.next_run_formatted + '</td></tr>';
-                        }
-
-                        if (progress.last_run > 0) {
-                            const lastRun = new Date(progress.last_run * 1000);
-                            statusHTML += '<tr><td><strong>Last Run:</strong></td><td>' + lastRun.toLocaleString() + '</td></tr>';
-                        }
-
-                        statusHTML += '</table>';
-
-                        $('#auto-import-status').html(statusHTML);
-                    }
-                });
-            }
-
-            $('#btn-toggle-auto-import').on('click', function() {
-                const $btn = $(this);
-                const wasEnabled = $btn.text().includes('Disable');
-                const newState = !wasEnabled;
-
-                $btn.prop('disabled', true);
-
-                $.post(ajaxurl, {
-                    action: 'seminargo_toggle_auto_import',
-                    enabled: newState
-                }, function(response) {
-                    $btn.prop('disabled', false);
-                    if (response.success) {
-                        loadAutoImportStatus();
-                        loadLogs();
-                    } else {
-                        alert('Error: ' + response.data);
-                    }
-                });
-            });
-
-            $('#btn-reset-progress').on('click', function() {
-                if (confirm('<?php echo esc_js( __( 'Reset auto-import progress? This will start the import from the beginning.', 'seminargo' ) ); ?>')) {
-                    $.post(ajaxurl, { action: 'seminargo_reset_auto_import' }, function(response) {
-                        if (response.success) {
-                            loadAutoImportStatus();
-                        }
-                    });
-                }
-            });
-
-            // Initial loads
+            // Initial load
             loadLogs();
-            loadAutoImportStatus();
-
-            // Refresh auto-import status every 30 seconds
-            setInterval(loadAutoImportStatus, 30000);
         });
         </script>
         <?php
