@@ -815,6 +815,16 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
     $event_type_collections = get_post_meta( $post->ID, 'event_type_collections', true );
     $popular_location_collections = get_post_meta( $post->ID, 'popular_location_collections', true );
 
+    // Get visibility settings (default to true/shown)
+    $show_top_hotels = get_post_meta( $post->ID, 'show_top_hotels_section', true ) !== '0';
+    $show_event_types = get_post_meta( $post->ID, 'show_event_types_section', true ) !== '0';
+    $show_locations = get_post_meta( $post->ID, 'show_locations_section', true ) !== '0';
+
+    // Get filter tab visibility settings (default to true/shown)
+    $show_top_tab = get_post_meta( $post->ID, 'show_top_hotels_tab', true ) !== '0';
+    $show_theme_tab = get_post_meta( $post->ID, 'show_theme_filter_tab', true ) !== '0';
+    $show_location_tab = get_post_meta( $post->ID, 'show_location_filter_tab', true ) !== '0';
+
     // Convert to arrays
     $selected_event_types = ! empty( $event_type_collections ) ? array_map( 'intval', explode( ',', $event_type_collections ) ) : array();
     $selected_locations = ! empty( $popular_location_collections ) ? array_map( 'intval', explode( ',', $popular_location_collections ) ) : array();
@@ -940,7 +950,146 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                 font-weight: 600;
                 font-size: 12px;
             }
+            .visibility-settings {
+                background: #f0f6ff;
+                border: 2px solid #2271b1;
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 30px;
+            }
+            .visibility-settings h3 {
+                margin-top: 0 !important;
+                border-bottom: none !important;
+                color: #2271b1;
+                font-size: 16px;
+            }
+            .visibility-group {
+                margin-bottom: 20px;
+            }
+            .visibility-group:last-child {
+                margin-bottom: 0;
+            }
+            .visibility-group h4 {
+                font-size: 14px;
+                margin: 0 0 12px 0;
+                color: #1d2327;
+                font-weight: 600;
+            }
+            .checkbox-group {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 12px;
+            }
+            .checkbox-item {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px;
+                background: white;
+                border-radius: 4px;
+                border: 1px solid #ddd;
+                transition: all 0.2s;
+            }
+            .checkbox-item:hover {
+                border-color: #AC2A6E;
+                background: #fafafa;
+            }
+            .checkbox-item input[type="checkbox"] {
+                width: 18px;
+                height: 18px;
+                margin: 0;
+                cursor: pointer;
+            }
+            .checkbox-item label {
+                margin: 0;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 500;
+                flex: 1;
+            }
         </style>
+
+        <!-- Visibility Settings -->
+        <div class="visibility-settings">
+            <h3>👁️ Sichtbarkeit der Sektionen</h3>
+
+            <div class="visibility-group">
+                <h4>Haupt-Sektionen</h4>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox"
+                               id="show_top_hotels_section"
+                               name="show_top_hotels_section"
+                               value="1"
+                               <?php checked( $show_top_hotels, true ); ?>>
+                        <label for="show_top_hotels_section">
+                            ⭐ Zeige "Top-Veranstaltungsorte" Sektion
+                        </label>
+                    </div>
+
+                    <div class="checkbox-item">
+                        <input type="checkbox"
+                               id="show_event_types_section"
+                               name="show_event_types_section"
+                               value="1"
+                               <?php checked( $show_event_types, true ); ?>>
+                        <label for="show_event_types_section">
+                            🎯 Zeige "Veranstaltungsarten" Sektion
+                        </label>
+                    </div>
+
+                    <div class="checkbox-item">
+                        <input type="checkbox"
+                               id="show_locations_section"
+                               name="show_locations_section"
+                               value="1"
+                               <?php checked( $show_locations, true ); ?>>
+                        <label for="show_locations_section">
+                            📍 Zeige "Angesagte Locations" Sektion
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="visibility-group">
+                <h4>Top Hotels Filter-Tabs</h4>
+                <p style="font-size: 12px; color: #666; margin: 0 0 12px 0;">Steuere welche Filter-Tabs in der "Top-Veranstaltungsorte" Sektion angezeigt werden</p>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox"
+                               id="show_top_hotels_tab"
+                               name="show_top_hotels_tab"
+                               value="1"
+                               <?php checked( $show_top_tab, true ); ?>>
+                        <label for="show_top_hotels_tab">
+                            ⭐ Zeige "Top Hotels" Tab
+                        </label>
+                    </div>
+
+                    <div class="checkbox-item">
+                        <input type="checkbox"
+                               id="show_theme_filter_tab"
+                               name="show_theme_filter_tab"
+                               value="1"
+                               <?php checked( $show_theme_tab, true ); ?>>
+                        <label for="show_theme_filter_tab">
+                            🏷️ Zeige "Nach Thema" Tab
+                        </label>
+                    </div>
+
+                    <div class="checkbox-item">
+                        <input type="checkbox"
+                               id="show_location_filter_tab"
+                               name="show_location_filter_tab"
+                               value="1"
+                               <?php checked( $show_location_tab, true ); ?>>
+                        <label for="show_location_filter_tab">
+                            🌍 Zeige "Nach Region" Tab
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Event Types Section -->
         <h3>Veranstaltungsarten Sektion (Event Types)</h3>
@@ -1135,5 +1284,15 @@ function seminargo_save_homepage_collections_meta( $post_id ) {
     } else {
         delete_post_meta( $post_id, 'popular_location_collections' );
     }
+
+    // Save section visibility settings (save as '1' or '0')
+    update_post_meta( $post_id, 'show_top_hotels_section', isset( $_POST['show_top_hotels_section'] ) ? '1' : '0' );
+    update_post_meta( $post_id, 'show_event_types_section', isset( $_POST['show_event_types_section'] ) ? '1' : '0' );
+    update_post_meta( $post_id, 'show_locations_section', isset( $_POST['show_locations_section'] ) ? '1' : '0' );
+
+    // Save filter tab visibility settings (save as '1' or '0')
+    update_post_meta( $post_id, 'show_top_hotels_tab', isset( $_POST['show_top_hotels_tab'] ) ? '1' : '0' );
+    update_post_meta( $post_id, 'show_theme_filter_tab', isset( $_POST['show_theme_filter_tab'] ) ? '1' : '0' );
+    update_post_meta( $post_id, 'show_location_filter_tab', isset( $_POST['show_location_filter_tab'] ) ? '1' : '0' );
 }
 add_action( 'save_post', 'seminargo_save_homepage_collections_meta' );

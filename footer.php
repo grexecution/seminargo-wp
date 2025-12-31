@@ -78,9 +78,10 @@
                                 <?php dynamic_sidebar( 'footer-2' ); ?>
                             <?php else : ?>
                                 <ul class="footer-menu">
-                                    <li><a href="#"><?php esc_html_e( 'Wie geht Buchende?', 'seminargo' ); ?></a></li>
-                                    <li><a href="#"><?php esc_html_e( 'Katalog', 'seminargo' ); ?></a></li>
-                                    <li><a href="#"><?php esc_html_e( 'Hilfe', 'seminargo' ); ?></a></li>
+                                    <li><a href="<?php echo esc_url( home_url( '/seminarhotels' ) ); ?>"><?php esc_html_e( 'Unsere Seminarhotels', 'seminargo' ); ?></a></li>
+                                    <li><a href="<?php echo esc_url( home_url( '/faq' ) ); ?>"><?php esc_html_e( 'FAQ', 'seminargo' ); ?></a></li>
+                                    <li><a href="<?php echo esc_url( home_url( '/partner' ) ); ?>"><?php esc_html_e( 'Partner', 'seminargo' ); ?></a></li>
+                                    <li><a href="<?php echo esc_url( home_url( '/kontakt' ) ); ?>"><?php esc_html_e( 'Kontakt', 'seminargo' ); ?></a></li>
                                 </ul>
                             <?php endif; ?>
                         </div>

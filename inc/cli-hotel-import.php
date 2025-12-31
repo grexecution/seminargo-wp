@@ -74,7 +74,7 @@ class Seminargo_Hotel_Import_CLI {
 
         try {
             // Access private method via reflection
-            $api_url = 'https://dev.seminargo.eu/pricelist/graphql';
+            $api_url = 'https://lister-staging.seminargo.com/pricelist/graphql';
 
             WP_CLI::line( '📡 Fetching hotels from API...' );
 
@@ -139,7 +139,7 @@ class Seminargo_Hotel_Import_CLI {
      * Fetch hotels from API (CLI version without logging)
      */
     private function fetch_hotels_from_api_cli( $max_limit, $offset = 0 ) {
-        $api_url = 'https://dev.seminargo.eu/pricelist/graphql';
+        $api_url = 'https://lister-staging.seminargo.com/pricelist/graphql';
         $all_hotels = [];
         $batch_size = 200;
         $skip = $offset;

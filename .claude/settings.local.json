@@ -36,7 +36,8 @@
       "Bash(wp plugin list:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(wp option get:*)"
+      "Bash(wp option get:*)",
+      "Bash(wp option delete:*)"
     ],
     "deny": [],
     "ask": []

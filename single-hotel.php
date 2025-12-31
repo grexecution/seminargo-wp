@@ -18,7 +18,10 @@ while ( have_posts() ) : the_post();
         'hotel_id'      => get_post_meta( $post_id, 'hotel_id', true ),
         'ref_code'      => get_post_meta( $post_id, 'ref_code', true ),
         'api_slug'      => get_post_meta( $post_id, 'api_slug', true ),
-        'shop_url'      => get_post_meta( $post_id, 'shop_url', true ),
+        'finder_url_slug'    => get_post_meta( $post_id, 'finder_url_slug', true ),
+        'finder_url_refcode' => get_post_meta( $post_id, 'finder_url_refcode', true ),
+        'finder_add_slug'    => get_post_meta( $post_id, 'finder_add_slug', true ),
+        'finder_add_refcode' => get_post_meta( $post_id, 'finder_add_refcode', true ),
 
         // Location
         'address'       => get_post_meta( $post_id, 'business_address_1', true ),
@@ -334,7 +337,22 @@ while ( have_posts() ) : the_post();
                                     <div class="description-content" id="hotel-description-content">
                                         <?php
                                         if ( $hotel_data['description'] ) {
-                                            echo wpautop( wp_kses_post( $hotel_data['description'] ) );
+                                            // Fix malformed HTML from API before rendering
+                                            $description = $hotel_data['description'];
+
+                                            // Use DOMDocument to fix unclosed/malformed HTML tags
+                                            if ( class_exists( 'DOMDocument' ) ) {
+                                                $dom = new DOMDocument();
+                                                // Suppress warnings from malformed HTML
+                                                @$dom->loadHTML( '<?xml encoding="utf-8" ?><div>' . $description . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+                                                $description = $dom->saveHTML();
+                                                // Remove the wrapper div we added
+                                                $description = preg_replace( '/^<div>(.*)<\/div>$/s', '$1', $description );
+                                                // Remove XML encoding declaration
+                                                $description = str_replace( '<?xml encoding="utf-8" ?>', '', $description );
+                                            }
+
+                                            echo wpautop( wp_kses_post( $description ) );
                                         } else {
                                             the_content();
                                         }
@@ -745,17 +763,11 @@ while ( have_posts() ) : the_post();
 
                             <!-- Info Card -->
                             <?php
-                            // Build Finder URL with hotel parameter
-                            $finder_url = 'https://lister-staging.seminargo.com/';
-                            if ( !empty( $hotel_data['api_slug'] ) ) {
-                                // Use slug parameter (preferred by client)
-                                $finder_url .= '?addHotelBySlug=' . urlencode( $hotel_data['api_slug'] );
-                            } elseif ( !empty( $hotel_data['ref_code'] ) ) {
-                                // Fallback to refCode if slug not available
-                                $finder_url .= '?addHotelByRefCode=' . urlencode( $hotel_data['ref_code'] );
-                            }
+                            // Use pre-built Finder URLs from API import
+                            // Priority: slug-based URL (preferred), fallback to refCode
+                            $finder_url = $hotel_data['finder_add_slug'] ?: $hotel_data['finder_add_refcode'];
 
-                            if ( !empty( $hotel_data['api_slug'] ) || !empty( $hotel_data['ref_code'] ) ) :
+                            if ( !empty( $finder_url ) ) :
                             ?>
                             <div class="booking-card sticky" id="booking-form-section">
                                 <div class="booking-card-header">
@@ -842,6 +854,11 @@ while ( have_posts() ) : the_post();
 
         <!-- Ähnliche Hotels Section -->
         <?php
+        // Don't show similar hotels in embedded/iframe mode
+        $is_embedded = isset( $_GET['embedded'] ) && $_GET['embedded'] == '1';
+
+        if ( ! $is_embedded ) :
+
         $current_hotel_id = get_the_ID();
         $current_city = $hotel_data['city'];
         $current_country = $hotel_data['country'];
@@ -947,7 +964,7 @@ while ( have_posts() ) : the_post();
                     ?>
                 </div>
                 <div class="section-footer">
-                    <a href="<?php echo esc_url('https://lister-dev.seminargo.com/'); ?>" class="btn-view-all">
+                    <a href="<?php echo esc_url('https://finder.dev.seminargo.eu/'); ?>" class="btn-view-all">
                         <?php esc_html_e( 'Alle Hotels ansehen', 'seminargo' ); ?>
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -958,6 +975,8 @@ while ( have_posts() ) : the_post();
             </div>
         </section>
         <?php endif; ?>
+
+        <?php endif; // End embedded mode check for similar hotels ?>
 
         <!-- Client Logos Section -->
         <section class="logo-slider-section">

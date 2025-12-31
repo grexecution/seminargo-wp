@@ -136,6 +136,15 @@ get_header(); ?>
         </section>
 
         <!-- Hotels Section -->
+        <?php
+        // Get homepage visibility settings (default to shown if not set)
+        $page_id = get_the_ID();
+        $show_top_hotels_section = get_post_meta( $page_id, 'show_top_hotels_section', true ) !== '0';
+        $show_event_types_section = get_post_meta( $page_id, 'show_event_types_section', true ) !== '0';
+        $show_locations_section = get_post_meta( $page_id, 'show_locations_section', true ) !== '0';
+
+        if ( $show_top_hotels_section ) :
+        ?>
         <section id="hotels-section" class="hotels-section">
             <div class="container">
                 <div class="section-header">
@@ -144,14 +153,26 @@ get_header(); ?>
                 </div>
 
                 <!-- Filter Tabs -->
+                <?php
+                // Get filter tab visibility settings (default to shown if not set)
+                $show_top_tab      = get_post_meta( $page_id, 'show_top_hotels_tab', true ) !== '0';
+                $show_theme_tab    = get_post_meta( $page_id, 'show_theme_filter_tab', true ) !== '0';
+                $show_location_tab = get_post_meta( $page_id, 'show_location_filter_tab', true ) !== '0';
+
+                // Only show filter tabs if at least one is enabled
+                if ( $show_top_tab || $show_theme_tab || $show_location_tab ) :
+                ?>
                 <div class="filter-tabs">
+                    <?php if ( $show_top_tab ) : ?>
                     <button class="filter-tab active" data-filter="top">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                         </svg>
                         Top Hotels
                     </button>
-                    <button class="filter-tab" data-filter="theme">
+                    <?php endif; ?>
+                    <?php if ( $show_theme_tab ) : ?>
+                    <button class="filter-tab<?php echo ! $show_top_tab ? ' active' : ''; ?>" data-filter="theme">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                             <line x1="9" y1="9" x2="15" y2="9"></line>
@@ -159,22 +180,28 @@ get_header(); ?>
                         </svg>
                         Nach Thema
                     </button>
-                    <button class="filter-tab" data-filter="location">
+                    <?php endif; ?>
+                    <?php if ( $show_location_tab ) : ?>
+                    <button class="filter-tab<?php echo ! $show_top_tab && ! $show_theme_tab ? ' active' : ''; ?>" data-filter="location">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
                             <circle cx="12" cy="10" r="3"></circle>
                         </svg>
                         Nach Region
                     </button>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Filter Options -->
                 <div class="filter-options">
+                    <?php if ( $show_top_tab ) : ?>
                     <!-- Top Hotels Filter (Hidden by default) -->
                     <div class="filter-option-group" data-filter-group="top">
                         <p class="filter-description">Unsere handverlesenen Top-Veranstaltungsorte</p>
                     </div>
+                    <?php endif; ?>
 
+                    <?php if ( $show_theme_tab ) : ?>
                     <!-- Theme Filter -->
                     <div class="filter-option-group" data-filter-group="theme">
                         <div class="filter-buttons">
@@ -186,7 +213,9 @@ get_header(); ?>
                             <button class="filter-button" data-theme="incentive">Incentive</button>
                         </div>
                     </div>
+                    <?php endif; ?>
 
+                    <?php if ( $show_location_tab ) : ?>
                     <!-- Location Filter -->
                     <div class="filter-option-group" data-filter-group="location">
                         <div class="filter-buttons">
@@ -199,7 +228,9 @@ get_header(); ?>
                             <button class="filter-button" data-location="oberösterreich">Oberösterreich</button>
                         </div>
                     </div>
+                    <?php endif; ?>
                 </div>
+                <?php endif; // End filter tabs check ?>
 
                 <div class="hotels-grid">
                     <?php
@@ -310,8 +341,10 @@ get_header(); ?>
                 </div>
             </div>
         </section>
+        <?php endif; // End show_top_hotels_section check ?>
 
         <!-- Event Types Section -->
+        <?php if ( $show_event_types_section ) : ?>
         <section id="event-types-section" class="event-types-section">
             <div class="container">
                 <div class="section-header">
@@ -392,8 +425,10 @@ get_header(); ?>
                 </div>
             </div>
         </section>
+        <?php endif; // End show_event_types_section check ?>
 
         <!-- Popular Locations Section -->
+        <?php if ( $show_locations_section ) : ?>
         <section id="popular-locations-section" class="popular-locations-section">
             <div class="container">
                 <div class="section-header">
@@ -452,6 +487,7 @@ get_header(); ?>
                 </div>
             </div>
         </section>
+        <?php endif; // End show_locations_section check ?>
 
         <!-- Location Finder CTA Section -->
         <?php seminargo_cta_section(); ?>

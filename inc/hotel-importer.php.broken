@@ -1,0 +1,2691 @@
+<?php
+/**
+ * Apollo Hotels Importer
+ *
+ * Fetches hotels from Apollo API and saves as WordPress posts with detailed logging.
+ *
+ * @package Seminargo
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
+class Seminargo_Hotel_Importer {
+
+    private $api_url = 'https://lister-staging.seminargo.com/pricelist/graphql';
+    private $shop_url = 'https://lister-staging.seminargo.com/hotels/';
+
+    // Logging options
+    private $current_import_logs = []; // Temporary storage during import
+    private $last_sync_logs_option = 'seminargo_hotel_last_sync_logs'; // Full logs of last run only
+    private $error_logs_option = 'seminargo_hotel_error_logs'; // Permanent error history
+    private $import_history_option = 'seminargo_hotel_import_history'; // List of past imports
+
+    // Import tracking
+    private $last_import_option = 'seminargo_hotels_last_import';
+    private $imported_ids_option = 'seminargo_hotels_imported_ids';
+
+    // Legacy (to be removed)
+    private $log_option = 'seminargo_hotels_import_log';
+    private $auto_import_enabled_option = 'seminargo_auto_import_enabled';
+    private $auto_import_progress_option = 'seminargo_auto_import_progress';
+
+    public function __construct() {
+        // Admin menu
+        add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
+
+        // AJAX handlers
+        add_action( 'wp_ajax_seminargo_fetch_hotels', [ $this, 'ajax_fetch_hotels' ] );
+        add_action( 'wp_ajax_seminargo_get_logs', [ $this, 'ajax_get_logs' ] );
+        add_action( 'wp_ajax_seminargo_clear_logs', [ $this, 'ajax_clear_logs' ] );
+        add_action( 'wp_ajax_seminargo_toggle_auto_import', [ $this, 'ajax_toggle_auto_import' ] );
+        add_action( 'wp_ajax_seminargo_reset_auto_import', [ $this, 'ajax_reset_auto_import' ] );
+        add_action( 'wp_ajax_seminargo_get_auto_import_status', [ $this, 'ajax_get_auto_import_status' ] );
+        add_action( 'wp_ajax_seminargo_get_import_status', [ $this, 'ajax_get_import_status' ] );
+
+        // Cron
+        add_action( 'init', [ $this, 'register_cron' ] );
+        add_action( 'seminargo_hotels_cron', [ $this, 'run_auto_import_batch' ] );
+
+        // Register hotel post type if not exists
+        add_action( 'init', [ $this, 'register_post_type' ] );
+
+        // Add cron interval
+        add_filter( 'cron_schedules', [ $this, 'add_cron_interval' ] );
+
+        // Add meta boxes for hotel edit page
+        add_action( 'add_meta_boxes', [ $this, 'add_hotel_meta_boxes' ] );
+
+        // Save featured meta
+        add_action( 'save_post_hotel', [ $this, 'save_featured_meta' ] );
+
+        // Add featured column to hotels list
+        add_filter( 'manage_hotel_posts_columns', [ $this, 'add_featured_column' ] );
+        add_action( 'manage_hotel_posts_custom_column', [ $this, 'render_featured_column' ], 10, 2 );
+
+        // Column styles
+        add_action( 'admin_head', [ $this, 'hotel_column_styles' ] );
+
+        // Quick edit support
+        add_action( 'quick_edit_custom_box', [ $this, 'quick_edit_featured' ], 10, 2 );
+        add_action( 'save_post_hotel', [ $this, 'save_quick_edit_featured' ] );
+        add_action( 'admin_footer-edit.php', [ $this, 'quick_edit_javascript' ] );
+    }
+
+    /**
+     * Add column styles
+     */
+    public function hotel_column_styles() {
+        global $pagenow, $typenow;
+        if ( $pagenow === 'edit.php' && $typenow === 'hotel' ) {
+            echo '<style>
+                .column-hotel_image { width: 70px; }
+                .column-hotel_rating { width: 80px; }
+                .column-hotel_rooms { width: 60px; }
+                .column-hotel_capacity { width: 90px; }
+                .column-featured_landing { width: 90px; }
+            </style>';
+        }
+    }
+
+    /**
+     * Add featured field to quick edit
+     */
+    public function quick_edit_featured( $column_name, $post_type ) {
+        if ( $post_type !== 'hotel' || $column_name !== 'featured_landing' ) {
+            return;
+        }
+        ?>
+        <fieldset class="inline-edit-col-right">
+            <div class="inline-edit-col">
+                <label class="inline-edit-featured">
+                    <input type="checkbox" name="featured_on_landing" value="1">
+                    <span class="checkbox-title">Auf Startseite anzeigen</span>
+                </label>
+            </div>
+        </fieldset>
+        <?php
+    }
+
+    /**
+     * Save quick edit featured field
+     */
+    public function save_quick_edit_featured( $post_id ) {
+        // Skip if not quick edit or bulk edit
+        if ( ! isset( $_POST['_inline_edit'] ) && ! isset( $_POST['hotel_featured_nonce_field'] ) ) {
+            return;
+        }
+
+        // Check inline edit nonce
+        if ( isset( $_POST['_inline_edit'] ) && ! wp_verify_nonce( $_POST['_inline_edit'], 'inlineeditnonce' ) ) {
+            return;
+        }
+
+        // Skip if regular save (handled by other function)
+        if ( isset( $_POST['hotel_featured_nonce_field'] ) ) {
+            return;
+        }
+
+        if ( isset( $_POST['featured_on_landing'] ) && $_POST['featured_on_landing'] === '1' ) {
+            update_post_meta( $post_id, 'featured_on_landing', '1' );
+        } else {
+            delete_post_meta( $post_id, 'featured_on_landing' );
+        }
+    }
+
+    /**
+     * JavaScript for quick edit to populate checkbox
+     */
+    public function quick_edit_javascript() {
+        global $typenow;
+        if ( $typenow !== 'hotel' ) {
+            return;
+        }
+        ?>
+        <script>
+        jQuery(function($) {
+            var $inlineEdit = inlineEditPost.edit;
+            inlineEditPost.edit = function(id) {
+                $inlineEdit.apply(this, arguments);
+
+                var postId = 0;
+                if (typeof(id) === 'object') {
+                    postId = parseInt(this.getId(id));
+                }
+
+                if (postId > 0) {
+                    var $row = $('#post-' + postId);
+                    var featured = $row.find('.column-featured_landing').text().trim();
+                    var isChecked = featured.indexOf('Aktiv') !== -1;
+                    $('input[name="featured_on_landing"]', '.inline-edit-row').prop('checked', isChecked);
+                }
+            };
+        });
+        </script>
+        <?php
+    }
+
+    /**
+     * Add custom columns to hotels list
+     */
+    public function add_featured_column( $columns ) {
+        $new_columns = [];
+        $new_columns['cb'] = $columns['cb'];
+        $new_columns['hotel_image'] = 'Bild';
+        $new_columns['title'] = $columns['title'];
+        $new_columns['hotel_location'] = 'Standort';
+        $new_columns['hotel_rating'] = 'Bewertung';
+        $new_columns['hotel_rooms'] = 'Räume';
+        $new_columns['hotel_capacity'] = 'Kapazität';
+        $new_columns['featured_landing'] = 'Startseite';
+        $new_columns['date'] = $columns['date'];
+        return $new_columns;
+    }
+
+    /**
+     * Render custom column content
+     */
+    public function render_featured_column( $column, $post_id ) {
+        switch ( $column ) {
+            case 'hotel_image':
+                $image_url = get_the_post_thumbnail_url( $post_id, 'thumbnail' );
+                if ( ! $image_url ) {
+                    $medias_json = get_post_meta( $post_id, 'medias_json', true );
+                    $medias = json_decode( $medias_json, true ) ?: [];
+                    if ( ! empty( $medias[0]['previewUrl'] ) ) {
+                        $image_url = $medias[0]['previewUrl'];
+                    }
+                }
+                if ( $image_url ) {
+                    echo '<img src="' . esc_url( $image_url ) . '" style="width: 60px; height: 45px; object-fit: cover; border-radius: 4px;">';
+                } else {
+                    echo '<span style="display: inline-block; width: 60px; height: 45px; background: #f0f0f0; border-radius: 4px; text-align: center; line-height: 45px; color: #999;">—</span>';
+                }
+                break;
+
+            case 'hotel_location':
+                $city = get_post_meta( $post_id, 'business_city', true );
+                $country = get_post_meta( $post_id, 'business_country', true );
+                $location = array_filter( [ $city, $country ] );
+                if ( ! empty( $location ) ) {
+                    echo '<span style="color: #666;">' . esc_html( implode( ', ', $location ) ) . '</span>';
+                } else {
+                    echo '<span style="color: #999;">—</span>';
+                }
+                break;
+
+            case 'hotel_rating':
+                $rating = get_post_meta( $post_id, 'rating', true );
+                if ( $rating && floatval( $rating ) > 0 ) {
+                    $rating_val = floatval( $rating );
+                    $color = $rating_val >= 8 ? '#4caf50' : ( $rating_val >= 6 ? '#ff9800' : '#f44336' );
+                    echo '<span style="display: inline-block; padding: 2px 8px; background: ' . $color . '; color: white; border-radius: 4px; font-weight: 600; font-size: 12px;">' . number_format( $rating_val, 1 ) . '</span>';
+                } else {
+                    echo '<span style="color: #999;">—</span>';
+                }
+                break;
+
+            case 'hotel_rooms':
+                $rooms = get_post_meta( $post_id, 'rooms', true );
+                if ( $rooms && intval( $rooms ) > 0 ) {
+                    echo '<span style="font-weight: 500;">' . intval( $rooms ) . '</span>';
+                } else {
+                    echo '<span style="color: #999;">—</span>';
+                }
+                break;
+
+            case 'hotel_capacity':
+                $capacity = get_post_meta( $post_id, 'capacity', true );
+                if ( $capacity && intval( $capacity ) > 0 ) {
+                    echo '<span style="font-weight: 500;">' . intval( $capacity ) . ' Pers.</span>';
+                } else {
+                    echo '<span style="color: #999;">—</span>';
+                }
+                break;
+
+            case 'featured_landing':
+                $featured = get_post_meta( $post_id, 'featured_on_landing', true );
+                if ( $featured === '1' ) {
+                    echo '<span style="display: inline-block; padding: 3px 8px; background: #4caf50; color: white; border-radius: 4px; font-size: 11px; font-weight: 600;">⭐ Aktiv</span>';
+                } else {
+                    echo '<span style="color: #999;">—</span>';
+                }
+                break;
+        }
+    }
+
+    /**
+     * Save featured meta field
+     */
+    public function save_featured_meta( $post_id ) {
+        // Check nonce
+        if ( ! isset( $_POST['hotel_featured_nonce_field'] ) || ! wp_verify_nonce( $_POST['hotel_featured_nonce_field'], 'hotel_featured_nonce' ) ) {
+            return;
+        }
+
+        // Check autosave
+        if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+            return;
+        }
+
+        // Check permissions
+        if ( ! current_user_can( 'edit_post', $post_id ) ) {
+            return;
+        }
+
+        // Save or delete the meta
+        if ( isset( $_POST['featured_on_landing'] ) && $_POST['featured_on_landing'] === '1' ) {
+            update_post_meta( $post_id, 'featured_on_landing', '1' );
+        } else {
+            delete_post_meta( $post_id, 'featured_on_landing' );
+        }
+    }
+
+    /**
+     * Add custom cron interval (Note: WordPress already has 'twicedaily')
+     */
+    public function add_cron_interval( $schedules ) {
+        // WordPress already has 'twicedaily' (every 12 hours)
+        // This function is kept for compatibility but no longer adds custom intervals
+        return $schedules;
+    }
+
+    /**
+     * Register hotel post type
+     */
+    public function register_post_type() {
+        if ( ! post_type_exists( 'hotel' ) ) {
+            register_post_type( 'hotel', [
+                'labels' => [
+                    'name'          => __( 'Hotels', 'seminargo' ),
+                    'singular_name' => __( 'Hotel', 'seminargo' ),
+                    'add_new'       => __( 'Add New', 'seminargo' ),
+                    'add_new_item'  => __( 'Add New Hotel', 'seminargo' ),
+                    'edit_item'     => __( 'Edit Hotel', 'seminargo' ),
+                    'view_item'     => __( 'View Hotel', 'seminargo' ),
+                    'all_items'     => __( 'All Hotels', 'seminargo' ),
+                    'search_items'  => __( 'Search Hotels', 'seminargo' ),
+                    'not_found'     => __( 'No hotels found', 'seminargo' ),
+                ],
+                'public'       => true,
+                'has_archive'  => true,
+                'show_in_rest' => true,
+                'supports'     => [ 'title', 'editor', 'thumbnail', 'custom-fields' ],
+                'menu_icon'    => 'dashicons-building',
+                'rewrite'      => [ 'slug' => 'hotel' ],
+            ] );
+        }
+
+        // Register featured_on_landing meta for REST API / Block Editor
+        register_post_meta( 'hotel', 'featured_on_landing', [
+            'show_in_rest'      => true,
+            'single'            => true,
+            'type'              => 'string',
+            'default'           => '',
+            'sanitize_callback' => 'sanitize_text_field',
+        ] );
+    }
+
+    /**
+     * Register cron job
+     */
+    public function register_cron() {
+        $auto_import_enabled = get_option( $this->auto_import_enabled_option, false );
+        $is_scheduled = wp_next_scheduled( 'seminargo_hotels_cron' );
+
+        if ( $auto_import_enabled && ! $is_scheduled ) {
+            // Schedule to run twice daily (every 12 hours) when auto-import is enabled
+            wp_schedule_event( time(), 'twicedaily', 'seminargo_hotels_cron' );
+        } elseif ( ! $auto_import_enabled && $is_scheduled ) {
+            // Unschedule if auto-import is disabled
+            wp_clear_scheduled_hook( 'seminargo_hotels_cron' );
+        }
+    }
+
+    /**
+     * Add admin menu
+     */
+    public function add_admin_menu() {
+        add_submenu_page(
+            'edit.php?post_type=hotel',
+            __( 'Hotel Import', 'seminargo' ),
+            __( 'Import / Sync', 'seminargo' ),
+            'manage_options',
+            'seminargo-hotel-import',
+            [ $this, 'render_admin_page' ]
+        );
+    }
+
+    /**
+     * Add meta boxes to hotel edit page
+     */
+    public function add_hotel_meta_boxes() {
+        add_meta_box(
+            'hotel_basic_info',
+            '📋 ' . __( 'Basic Information', 'seminargo' ),
+            [ $this, 'render_basic_info_meta_box' ],
+            'hotel',
+            'normal',
+            'high'
+        );
+
+        add_meta_box(
+            'hotel_location',
+            '📍 ' . __( 'Location & Address', 'seminargo' ),
+            [ $this, 'render_location_meta_box' ],
+            'hotel',
+            'normal',
+            'high'
+        );
+
+        add_meta_box(
+            'hotel_texts',
+            '📝 ' . __( 'Descriptions & Arrival Info', 'seminargo' ),
+            [ $this, 'render_texts_meta_box' ],
+            'hotel',
+            'normal',
+            'default'
+        );
+
+        add_meta_box(
+            'hotel_amenities',
+            '✨ ' . __( 'Amenities & Attributes', 'seminargo' ),
+            [ $this, 'render_amenities_meta_box' ],
+            'hotel',
+            'normal',
+            'default'
+        );
+
+        add_meta_box(
+            'hotel_meeting_rooms',
+            '🏢 ' . __( 'Meeting Rooms', 'seminargo' ),
+            [ $this, 'render_meeting_rooms_meta_box' ],
+            'hotel',
+            'normal',
+            'default'
+        );
+
+        add_meta_box(
+            'hotel_media',
+            '🖼️ ' . __( 'Media & Images', 'seminargo' ),
+            [ $this, 'render_media_meta_box' ],
+            'hotel',
+            'side',
+            'default'
+        );
+
+        add_meta_box(
+            'hotel_api_info',
+            '🔌 ' . __( 'API Information', 'seminargo' ),
+            [ $this, 'render_api_info_meta_box' ],
+            'hotel',
+            'side',
+            'default'
+        );
+
+        add_meta_box(
+            'hotel_featured',
+            '⭐ ' . __( 'Landingpage', 'seminargo' ),
+            [ $this, 'render_featured_meta_box' ],
+            'hotel',
+            'side',
+            'high'
+        );
+    }
+
+    /**
+     * Render Featured meta box
+     */
+    public function render_featured_meta_box( $post ) {
+        $featured = get_post_meta( $post->ID, 'featured_on_landing', true );
+        wp_nonce_field( 'hotel_featured_nonce', 'hotel_featured_nonce_field' );
+        ?>
+        <style>
+            .featured-toggle {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px;
+                background: <?php echo $featured === '1' ? '#e8f5e9' : '#f5f5f5'; ?>;
+                border-radius: 8px;
+                border: 2px solid <?php echo $featured === '1' ? '#4caf50' : '#ddd'; ?>;
+            }
+            .featured-toggle input[type="checkbox"] {
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+            }
+            .featured-toggle .toggle-label {
+                font-weight: 600;
+                color: <?php echo $featured === '1' ? '#2e7d32' : '#666'; ?>;
+            }
+            .featured-toggle .toggle-status {
+                margin-left: auto;
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                background: <?php echo $featured === '1' ? '#4caf50' : '#999'; ?>;
+                color: white;
+            }
+        </style>
+        <div class="featured-toggle">
+            <input type="checkbox" name="featured_on_landing" id="featured_on_landing" value="1" <?php checked( $featured, '1' ); ?>>
+            <label for="featured_on_landing" class="toggle-label"><?php esc_html_e( 'Auf Startseite anzeigen', 'seminargo' ); ?></label>
+            <span class="toggle-status"><?php echo $featured === '1' ? esc_html__( 'Aktiv', 'seminargo' ) : esc_html__( 'Inaktiv', 'seminargo' ); ?></span>
+        </div>
+        <p class="description" style="margin-top: 10px; color: #666;">
+            <?php esc_html_e( 'Zeigt dieses Hotel im Bereich "Top-Veranstaltungsorte" auf der Startseite.', 'seminargo' ); ?>
+        </p>
+        <?php
+    }
+
+    /**
+     * Render Basic Info meta box
+     */
+    public function render_basic_info_meta_box( $post ) {
+        $fields = [
+            'hotel_id'             => __( 'Hotel ID', 'seminargo' ),
+            'ref_code'             => __( 'Reference Code', 'seminargo' ),
+            'hotel_name'           => __( 'Hotel Name', 'seminargo' ),
+            'business_name'        => __( 'Company Name (Firmenname)', 'seminargo' ),
+            'rating'               => __( 'Rating', 'seminargo' ),
+            'stars'                => __( 'Stars', 'seminargo' ),
+            'capacity'             => __( 'Max Capacity (People)', 'seminargo' ),
+            'rooms'                => __( 'Meeting Rooms Count', 'seminargo' ),
+            'max_capacity_rooms'   => __( 'Max Capacity Rooms (API)', 'seminargo' ),
+            'max_capacity_people'  => __( 'Max Capacity People (API)', 'seminargo' ),
+        ];
+
+        echo '<table class="form-table"><tbody>';
+        foreach ( $fields as $key => $label ) {
+            $value = get_post_meta( $post->ID, $key, true );
+            echo '<tr>';
+            echo '<th scope="row"><label>' . esc_html( $label ) . '</label></th>';
+            echo '<td><input type="text" class="regular-text" value="' . esc_attr( $value ) . '" readonly /></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+
+        // Show stars visually
+        $stars = get_post_meta( $post->ID, 'stars', true );
+        if ( $stars ) {
+            echo '<p><strong>' . esc_html__( 'Star Rating:', 'seminargo' ) . '</strong> ';
+            $full_stars = floor( $stars );
+            $half_star = ( $stars - $full_stars ) >= 0.5;
+            echo str_repeat( '⭐', $full_stars );
+            if ( $half_star ) {
+                echo '½';
+            }
+            echo ' (' . esc_html( $stars ) . ')</p>';
+        }
+    }
+
+    /**
+     * Render Location meta box
+     */
+    public function render_location_meta_box( $post ) {
+        $fields = [
+            'business_address_1'                   => __( 'Address Line 1', 'seminargo' ),
+            'business_address_2'                   => __( 'Address Line 2', 'seminargo' ),
+            'business_address_3'                   => __( 'Address Line 3', 'seminargo' ),
+            'business_address_4'                   => __( 'Address Line 4', 'seminargo' ),
+            'business_zip'                         => __( 'ZIP Code', 'seminargo' ),
+            'business_city'                        => __( 'City', 'seminargo' ),
+            'business_country'                     => __( 'Country', 'seminargo' ),
+            'business_email'                       => __( 'Email', 'seminargo' ),
+            'full_address'                         => __( 'Full Address', 'seminargo' ),
+            'location_latitude'                    => __( 'Latitude', 'seminargo' ),
+            'location_longitude'                   => __( 'Longitude', 'seminargo' ),
+            'distance_to_nearest_airport'          => __( 'Distance to Airport (km)', 'seminargo' ),
+            'distance_to_nearest_railroad_station' => __( 'Distance to Train Station (km)', 'seminargo' ),
+        ];
+
+        echo '<table class="form-table"><tbody>';
+        foreach ( $fields as $key => $label ) {
+            $value = get_post_meta( $post->ID, $key, true );
+            if ( $key === 'distance_to_nearest_airport' || $key === 'distance_to_nearest_railroad_station' ) {
+                $value = $value ? round( $value, 2 ) . ' km' : '';
+            }
+            echo '<tr>';
+            echo '<th scope="row"><label>' . esc_html( $label ) . '</label></th>';
+            echo '<td><input type="text" class="regular-text" value="' . esc_attr( $value ) . '" readonly /></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+
+        // Show map link
+        $lat = get_post_meta( $post->ID, 'location_latitude', true );
+        $lng = get_post_meta( $post->ID, 'location_longitude', true );
+        if ( $lat && $lng ) {
+            echo '<p><a href="https://www.google.com/maps?q=' . esc_attr( $lat ) . ',' . esc_attr( $lng ) . '" target="_blank" class="button">📍 ' . esc_html__( 'View on Google Maps', 'seminargo' ) . '</a></p>';
+        }
+    }
+
+    /**
+     * Render Texts meta box
+     */
+    public function render_texts_meta_box( $post ) {
+        $fields = [
+            'description'    => __( 'Hotel Description', 'seminargo' ),
+            'arrival_car'    => __( 'Arrival by Car', 'seminargo' ),
+            'arrival_flight' => __( 'Arrival by Flight', 'seminargo' ),
+            'arrival_train'  => __( 'Arrival by Train', 'seminargo' ),
+        ];
+
+        foreach ( $fields as $key => $label ) {
+            $value = get_post_meta( $post->ID, $key, true );
+            echo '<div style="margin-bottom: 20px;">';
+            echo '<h4 style="margin-bottom: 5px;">' . esc_html( $label ) . '</h4>';
+            if ( $value ) {
+                echo '<div style="background: #f9f9f9; padding: 10px; border: 1px solid #ddd; border-radius: 4px; max-height: 150px; overflow-y: auto;">';
+                echo wp_kses_post( nl2br( $value ) );
+                echo '</div>';
+            } else {
+                echo '<p style="color: #999; font-style: italic;">' . esc_html__( 'Not available', 'seminargo' ) . '</p>';
+            }
+            echo '</div>';
+        }
+    }
+
+    /**
+     * Render Amenities meta box
+     */
+    public function render_amenities_meta_box( $post ) {
+        $amenities_list = get_post_meta( $post->ID, 'amenities_list', true );
+        $amenities = json_decode( $amenities_list, true ) ?: [];
+
+        $labels = [
+            'room'     => '🛏️ ' . __( 'Room Features', 'seminargo' ),
+            'design'   => '🎨 ' . __( 'Design Style', 'seminargo' ),
+            'activity' => '🏃 ' . __( 'Activities', 'seminargo' ),
+            'wellness' => '💆 ' . __( 'Wellness', 'seminargo' ),
+            'facility' => '🏨 ' . __( 'Hotel Facilities', 'seminargo' ),
+            'ecolabel' => '🌿 ' . __( 'Eco Labels', 'seminargo' ),
+        ];
+
+        $translations = [
+            'ROOM_SAFE'                            => __( 'Safe', 'seminargo' ),
+            'ROOM_AIRCONDITIONER'                  => __( 'Air Conditioning', 'seminargo' ),
+            'ROOM_BARRIER_FREE'                    => __( 'Barrier Free', 'seminargo' ),
+            'ROOM_MINIBAR'                         => __( 'Minibar', 'seminargo' ),
+            'ROOM_BALCONY'                         => __( 'Balcony', 'seminargo' ),
+            'DESIGN_BUSINESS'                      => __( 'Business', 'seminargo' ),
+            'DESIGN_RURAL'                         => __( 'Rural', 'seminargo' ),
+            'DESIGN_MODERN'                        => __( 'Modern', 'seminargo' ),
+            'DESIGN_TRADITIONAL'                   => __( 'Traditional', 'seminargo' ),
+            'ACTIVITY_GOLF'                        => __( 'Golf', 'seminargo' ),
+            'ACTIVITY_BIKE_RENTAL'                 => __( 'Bike Rental', 'seminargo' ),
+            'ACTIVITY_FITNESS'                     => __( 'Fitness', 'seminargo' ),
+            'ACTIVITY_TENNIS'                      => __( 'Tennis', 'seminargo' ),
+            'ACTIVITY_SKI_SLOPE'                   => __( 'Ski Slope', 'seminargo' ),
+            'WELLNESS_OUTDOOR_POOL'                => __( 'Outdoor Pool', 'seminargo' ),
+            'WELLNESS_INDOOR_POOL'                 => __( 'Indoor Pool', 'seminargo' ),
+            'WELLNESS_MASSAGE'                     => __( 'Massage', 'seminargo' ),
+            'WELLNESS_SAUNA'                       => __( 'Sauna', 'seminargo' ),
+            'WELLNESS_WHIRLPOOL'                   => __( 'Whirlpool', 'seminargo' ),
+            'HOTELFACILITY_BARRIER_FREE'           => __( 'Barrier Free Access', 'seminargo' ),
+            'HOTELFACILITY_ELECTRIC_CHARGING_STATION' => __( 'EV Charging', 'seminargo' ),
+            'HOTELFACILITY_GREEN_AREA'             => __( 'Green Area', 'seminargo' ),
+            'ECOLABEL_AUSTRIAN_ECOLABEL'           => __( 'Austrian Ecolabel', 'seminargo' ),
+            'ECOLABEL_EU_ECOLABEL'                 => __( 'EU Ecolabel', 'seminargo' ),
+            'ECOLABEL_GREEN_KEY'                   => __( 'Green Key', 'seminargo' ),
+        ];
+
+        foreach ( $labels as $key => $label ) {
+            if ( ! empty( $amenities[ $key ] ) ) {
+                echo '<div style="margin-bottom: 15px;">';
+                echo '<strong>' . esc_html( $label ) . ':</strong><br>';
+                echo '<div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px;">';
+                foreach ( $amenities[ $key ] as $attr ) {
+                    $display = $translations[ $attr ] ?? str_replace( [ 'ROOM_', 'DESIGN_', 'ACTIVITY_', 'WELLNESS_', 'HOTELFACILITY_', 'ECOLABEL_' ], '', $attr );
+                    echo '<span style="background: #e7f3ff; padding: 3px 8px; border-radius: 3px; font-size: 12px;">' . esc_html( $display ) . '</span>';
+                }
+                echo '</div></div>';
+            }
+        }
+
+        if ( empty( array_filter( $amenities ) ) ) {
+            echo '<p style="color: #999;">' . esc_html__( 'No amenities data available', 'seminargo' ) . '</p>';
+        }
+    }
+
+    /**
+     * Render Meeting Rooms meta box
+     */
+    public function render_meeting_rooms_meta_box( $post ) {
+        $meeting_rooms = get_post_meta( $post->ID, 'meeting_rooms', true );
+        $rooms = json_decode( $meeting_rooms, true ) ?: [];
+
+        if ( empty( $rooms ) ) {
+            echo '<p style="color: #999;">' . esc_html__( 'No meeting rooms data available', 'seminargo' ) . '</p>';
+            return;
+        }
+
+        echo '<p><strong>' . esc_html__( 'Total Meeting Rooms:', 'seminargo' ) . '</strong> ' . count( $rooms ) . '</p>';
+
+        echo '<table class="widefat striped" style="margin-top: 10px;">';
+        echo '<thead><tr>';
+        echo '<th>' . esc_html__( 'Name', 'seminargo' ) . '</th>';
+        echo '<th>' . esc_html__( 'Area (m²)', 'seminargo' ) . '</th>';
+        echo '<th>' . esc_html__( 'Theater', 'seminargo' ) . '</th>';
+        echo '<th>' . esc_html__( 'Bankett', 'seminargo' ) . '</th>';
+        echo '<th>' . esc_html__( 'U-Form', 'seminargo' ) . '</th>';
+        echo '<th>' . esc_html__( 'Parliament', 'seminargo' ) . '</th>';
+        echo '<th>' . esc_html__( 'Block', 'seminargo' ) . '</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ( $rooms as $room ) {
+            echo '<tr>';
+            echo '<td><strong>' . esc_html( $room['name'] ?? '' ) . '</strong></td>';
+            echo '<td>' . esc_html( $room['area'] ?? '-' ) . '</td>';
+            echo '<td>' . esc_html( $room['capacityTheater'] ?? '-' ) . '</td>';
+            echo '<td>' . esc_html( $room['capacityBankett'] ?? '-' ) . '</td>';
+            echo '<td>' . esc_html( $room['capacityUForm'] ?? '-' ) . '</td>';
+            echo '<td>' . esc_html( $room['capacityParlament'] ?? '-' ) . '</td>';
+            echo '<td>' . esc_html( $room['capacityBlock'] ?? '-' ) . '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
+    }
+
+    /**
+     * Render Media meta box
+     */
+    public function render_media_meta_box( $post ) {
+        $medias_json = get_post_meta( $post->ID, 'medias_json', true );
+        $medias = json_decode( $medias_json, true ) ?: [];
+
+        // Show featured image
+        if ( has_post_thumbnail( $post->ID ) ) {
+            echo '<p><strong>' . esc_html__( 'Featured Image:', 'seminargo' ) . '</strong></p>';
+            echo get_the_post_thumbnail( $post->ID, 'medium', [ 'style' => 'max-width: 100%; height: auto;' ] );
+        }
+
+        // Show media count
+        echo '<p style="margin-top: 15px;"><strong>' . esc_html__( 'Total Media Files:', 'seminargo' ) . '</strong> ' . count( $medias ) . '</p>';
+
+        // List media files
+        if ( ! empty( $medias ) ) {
+            echo '<div style="max-height: 200px; overflow-y: auto;">';
+            foreach ( $medias as $media ) {
+                $name = $media['name'] ?? 'Unknown';
+                $url = $media['previewUrl'] ?? '';
+                echo '<div style="margin-bottom: 5px; font-size: 11px;">';
+                if ( $url ) {
+                    echo '<a href="' . esc_url( $url ) . '" target="_blank">' . esc_html( $name ) . '</a>';
+                } else {
+                    echo esc_html( $name );
+                }
+                echo '</div>';
+            }
+            echo '</div>';
+        }
+    }
+
+    /**
+     * Render API Info meta box
+     */
+    public function render_api_info_meta_box( $post ) {
+        $fields = [
+            'hotel_id'                    => __( 'API Hotel ID', 'seminargo' ),
+            'ref_code'                    => __( 'Reference Code', 'seminargo' ),
+            'api_slug'                    => __( 'API Slug', 'seminargo' ),
+            'shop_url'                    => __( 'Shop URL', 'seminargo' ),
+            'space_id'                    => __( 'Space ID', 'seminargo' ),
+            'space_name'                  => __( 'Space Name', 'seminargo' ),
+            'has_active_partner_contract' => __( 'Partner Contract', 'seminargo' ),
+            'direct_booking'              => __( 'Direct Booking', 'seminargo' ),
+        ];
+
+        echo '<table style="width: 100%;">';
+        foreach ( $fields as $key => $label ) {
+            $value = get_post_meta( $post->ID, $key, true );
+            if ( $key === 'has_active_partner_contract' || $key === 'direct_booking' ) {
+                $value = $value ? '✅ ' . __( 'Yes', 'seminargo' ) : '❌ ' . __( 'No', 'seminargo' );
+            }
+            echo '<tr>';
+            echo '<td style="padding: 5px 0;"><strong>' . esc_html( $label ) . ':</strong></td>';
+            echo '</tr><tr>';
+            echo '<td style="padding: 0 0 10px 0; word-break: break-all; font-size: 12px;">' . esc_html( $value ?: '-' ) . '</td>';
+            echo '</tr>';
+        }
+        echo '</table>';
+
+        // Link to shop
+        $shop_url = get_post_meta( $post->ID, 'shop_url', true );
+        if ( $shop_url ) {
+            echo '<p style="margin-top: 10px;"><a href="' . esc_url( $shop_url ) . '" target="_blank" class="button button-small">🔗 ' . esc_html__( 'View in Shop', 'seminargo' ) . '</a></p>';
+        }
+    }
+
+    /**
+     * Render admin page
+     */
+    /**
+     * Render admin page with tabs
+     */
+    public function render_admin_page() {
+        $last_import = get_option( $this->last_import_option, [] );
+        $next_scheduled = wp_next_scheduled( 'seminargo_hotels_cron' );
+        $auto_import_enabled = get_option( $this->auto_import_enabled_option, false );
+        $import_history = get_option( $this->import_history_option, [] );
+
+        // Get total hotels count
+        $total_hotels = wp_count_posts( 'hotel' );
+        $published_hotels = $total_hotels->publish ?? 0;
+        ?>
+        <div class="wrap">
+            <h1>🏨 <?php esc_html_e( 'Hotel Import / Sync', 'seminargo' ); ?></h1>
+
+            <!-- Quick Stats Bar -->
+            <div style="background: white; padding: 15px 20px; margin: 20px 0; border-left: 4px solid #AC2A6E; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 5px;">Total Hotels</div>
+                        <div style="font-size: 24px; font-weight: bold; color: #AC2A6E;"><?php echo esc_html( number_format( $published_hotels ) ); ?></div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 5px;">Last Import</div>
+                        <div style="font-size: 16px; font-weight: 600;">
+                            <?php
+                            if ( ! empty( $last_import['time'] ) ) {
+                                echo esc_html( human_time_diff( $last_import['time'], current_time( 'timestamp' ) ) . ' ago' );
+                                echo '<div style="font-size: 12px; color: #666; font-weight: normal;">';
+                                echo ! empty( $last_import['type'] ) ? '(' . ucfirst( $last_import['type'] ) . ')' : '';
+                                echo '</div>';
+                            } else {
+                                echo esc_html__( 'Never', 'seminargo' );
+                            }
+                            ?>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 5px;">Next Scheduled Sync</div>
+                        <div style="font-size: 16px; font-weight: 600;">
+                            <?php
+                            if ( $auto_import_enabled && $next_scheduled ) {
+                                echo esc_html( human_time_diff( $next_scheduled, current_time( 'timestamp' ) ) );
+                                echo '<div style="font-size: 12px; color: #10b981; font-weight: normal;">Auto-sync: ON</div>';
+                            } elseif ( $auto_import_enabled ) {
+                                echo '<span style="color: #f59e0b;">Scheduled soon...</span>';
+                            } else {
+                                echo '<span style="color: #999;">Disabled</span>';
+                            }
+                            ?>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 5px;">Last Import Stats</div>
+                        <div style="font-size: 14px;">
+                            <span style="color: #10b981;" title="Created">+<?php echo esc_html( $last_import['created'] ?? 0 ); ?></span>
+                            <span style="color: #3b82f6;" title="Updated">↻<?php echo esc_html( $last_import['updated'] ?? 0 ); ?></span>
+                            <span style="color: #f59e0b;" title="Drafted">-<?php echo esc_html( $last_import['drafted'] ?? 0 ); ?></span>
+                            <?php if ( ! empty( $last_import['errors'] ) ): ?>
+                                <span style="color: #ef4444;" title="Errors">✕<?php echo esc_html( $last_import['errors'] ); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <h2 class="nav-tab-wrapper">
+                <a href="#tab-import" class="nav-tab nav-tab-active" data-tab="import">Import Now</a>
+                <a href="#tab-schedule" class="nav-tab" data-tab="schedule">Schedule</a>
+                <a href="#tab-last-import" class="nav-tab" data-tab="last-import">Last Import</a>
+                <a href="#tab-history" class="nav-tab" data-tab="history">History</a>
+            </h2>
+
+            <!-- Tab: Import Now -->
+            <div id="tab-content-import" class="tab-content active">
+                <!-- Import Trigger Card -->
+                <div class="card" style="margin-top: 0; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+                        <div style="flex: 1;">
+                            <h2 style="margin: 0 0 10px 0;">🔄 <?php esc_html_e( 'Manual Import', 'seminargo' ); ?></h2>
+                            <p style="margin: 0; color: #666;">Start a full import of all hotels from the API. Watch live progress below.</p>
+                        </div>
+                        <div>
+                            <button id="btn-fetch-now" class="button button-primary button-hero" style="height: 60px; font-size: 16px;">
+                                🚀 <?php esc_html_e( 'Import All Hotels Now', 'seminargo' ); ?>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="import-progress" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                        <div style="background: #f0f0f0; border-radius: 4px; padding: 3px;">
+                            <div id="progress-bar" style="background: #AC2A6E; height: 28px; border-radius: 3px; width: 0%; transition: width 0.3s; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: 600; font-size: 14px;"></div>
+                        </div>
+                        <p id="progress-text" style="margin-top: 10px; color: #666; font-weight: 500; font-size: 14px;"></p>
+                    </div>
+                </div>
+
+                <!-- Live Logs Card -->
+                <div class="card" style="margin-top: 0;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                        <h2 style="margin: 0;">📊 Live Import Activity</h2>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="btn-refresh-live-logs" class="button button-small" style="height: 32px;">
+                                🔄 Refresh Logs
+                            </button>
+                            <button id="btn-clear-live-logs" class="button button-small" style="height: 32px;">
+                                🗑️ Clear Logs
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="live-logs-status" style="padding: 12px; background: #f9fafb; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #666; display: none;">
+                        <span id="live-logs-status-text">Waiting for import to start...</span>
+                    </div>
+
+                    <div id="live-logs-container" style="background: #1e1e1e; border-radius: 6px; padding: 15px; max-height: 600px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;">
+                        <p style="color: #868e96; margin: 0; text-align: center; padding: 40px 20px;">
+                            No import activity yet. Click "Import All Hotels Now" to start.
+                        </p>
+                    </div>
+
+                    <div style="margin-top: 15px; padding: 12px; background: #f9fafb; border-radius: 4px; font-size: 12px; color: #666;">
+                        <strong>💡 Tip:</strong> Logs update every 2 seconds during import. Newest entries appear at the top.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Schedule -->
+            <div id="tab-content-schedule" class="tab-content" style="display: none;">
+                <div class="card" style="max-width: 800px; margin-top: 0;">
+                    <h2>📅 <?php esc_html_e( 'Automatic Sync Schedule', 'seminargo' ); ?></h2>
+
+                    <div style="background: <?php echo $auto_import_enabled ? '#f0fdf4' : '#fef2f2'; ?>; border: 2px solid <?php echo $auto_import_enabled ? '#10b981' : '#ef4444'; ?>; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <h3 style="margin: 0 0 10px 0; color: <?php echo $auto_import_enabled ? '#059669' : '#dc2626'; ?>;">
+                                    <?php echo $auto_import_enabled ? '✅ Auto-Sync: ENABLED' : '⏸️ Auto-Sync: DISABLED'; ?>
+                                </h3>
+                                <p style="margin: 0; font-size: 14px; color: #666;">
+                                    <?php if ( $auto_import_enabled ): ?>
+                                        Hotels will be automatically imported <strong>twice daily</strong> (every 12 hours).
+                                    <?php else: ?>
+                                        Enable automatic sync to keep your hotel listings up-to-date.
+                                    <?php endif; ?>
+                                </p>
+                            </div>
+                            <button id="btn-toggle-auto-import" class="button button-large" style="margin-left: 20px;">
+                                <?php echo $auto_import_enabled ? 'Disable' : 'Enable'; ?>
+                            </button>
+                        </div>
+                    </div>
+
+                    <?php if ( $auto_import_enabled && $next_scheduled ): ?>
+                        <div style="padding: 15px; background: white; border: 1px solid #e5e7eb; border-radius: 4px; margin-bottom: 20px;">
+                            <table class="widefat">
+                                <tr>
+                                    <td style="width: 200px;"><strong>Next Scheduled Run:</strong></td>
+                                    <td><?php echo esc_html( date( 'Y-m-d H:i:s', $next_scheduled ) ); ?> (<?php echo esc_html( human_time_diff( $next_scheduled, current_time( 'timestamp' ) ) ); ?>)</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Frequency:</strong></td>
+                                    <td>Twice Daily (Every 12 hours)</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Import Type:</strong></td>
+                                    <td>Automatic - Full import of all hotels</td>
+                                </tr>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+
+                    <div style="margin-top: 20px; padding: 15px; background: #f0f8ff; border-left: 3px solid #2271b1; border-radius: 3px;">
+                        <h4 style="margin-top: 0;">💡 Schedule Information</h4>
+                        <ul style="margin: 10px 0; padding-left: 20px; font-size: 13px; line-height: 1.8;">
+                            <li><strong>Twice Daily:</strong> WordPress runs the import every 12 hours</li>
+                            <li><strong>Runs in background:</strong> Won't interfere with your site performance</li>
+                            <li><strong>Full import:</strong> Each run imports all hotels (create, update, draft)</li>
+                            <li><strong>Automatic recovery:</strong> If a run fails, the next scheduled run will try again</li>
+                        </ul>
+                        <p style="margin: 10px 0 0; font-size: 12px; color: #666;">
+                            <strong>Recommended:</strong> Enable auto-sync for production sites to keep hotel data synchronized with the API.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Last Import -->
+            <div id="tab-content-last-import" class="tab-content" style="display: none;">
+                <div class="card" style="margin-top: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="margin: 0;">📋 <?php esc_html_e( 'Last Import Logs', 'seminargo' ); ?></h2>
+                        <div>
+                            <label style="margin-right: 15px;">
+                                <input type="checkbox" id="filter-errors" /> Show only errors
+                            </label>
+                            <label style="margin-right: 15px;">
+                                <input type="checkbox" id="filter-updates" /> Show only updates
+                            </label>
+                            <button id="btn-clear-logs" class="button">🗑️ Clear Logs</button>
+                        </div>
+                    </div>
+                    <div id="logs-container" style="max-height: 600px; overflow-y: auto; background: #1d2327; color: #fff; padding: 15px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px;">
+                        <p style="color: #72aee6;">Loading logs...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: History -->
+            <div id="tab-content-history" class="tab-content" style="display: none;">
+                <div class="card" style="margin-top: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="margin: 0;">📊 <?php esc_html_e( 'Import History', 'seminargo' ); ?></h2>
+                        <button id="btn-clear-history" class="button">🗑️ Clear History</button>
+                    </div>
+                    <div id="history-container">
+                        <p style="color: #666;">Loading history...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <style>
+            .tab-content { background: white; padding: 20px; }
+            .tab-content.active { display: block !important; }
+            .error-count {
+                background: #ef4444;
+                color: white;
+                padding: 2px 8px;
+                border-radius: 10px;
+                font-size: 11px;
+                margin-left: 5px;
+                font-weight: bold;
+            }
+            .log-entry {
+                padding: 10px 12px;
+                margin-bottom: 2px;
+                border-left: 3px solid transparent;
+                background: #2d2d2d;
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            .log-entry:first-child,
+            .log-entry-fade {
+                animation: fadeIn 0.3s ease-in;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(-5px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .log-entry.error {
+                color: #ff6b6b;
+                border-left-color: #ff6b6b;
+                background: #3d2d2d;
+            }
+            .log-entry.success {
+                color: #51cf66;
+                border-left-color: #51cf66;
+                background: #2d3d2d;
+            }
+            .log-entry.update {
+                color: #ffd43b;
+                border-left-color: #ffd43b;
+                background: #3d3d2d;
+            }
+            .log-entry.info {
+                color: #72aee6;
+                border-left-color: #72aee6;
+            }
+            .log-entry.draft {
+                color: #ff922b;
+                border-left-color: #ff922b;
+                background: #3d2f2d;
+            }
+            .log-time {
+                color: #868e96;
+                margin-right: 12px;
+                font-weight: 600;
+                font-size: 11px;
+            }
+            .log-hotel {
+                color: #da77f2;
+                font-weight: bold;
+                background: rgba(218, 119, 242, 0.1);
+                padding: 2px 6px;
+                border-radius: 3px;
+            }
+            .log-field {
+                color: #69db7c;
+                font-weight: 600;
+            }
+            .log-old {
+                color: #ff8787;
+                text-decoration: line-through;
+                opacity: 0.7;
+            }
+            .log-new {
+                color: #8ce99a;
+                font-weight: 600;
+            }
+            .history-table { width: 100%; border-collapse: collapse; }
+            .history-table th { background: #f3f4f6; padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb; }
+            .history-table td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+            .history-table tr:hover { background: #f9fafb; }
+            .badge { padding: 3px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+            .badge-manual { background: #dbeafe; color: #1e40af; }
+            .badge-automatic { background: #d1fae5; color: #065f46; }
+        </style>
+
+        <script>
+        jQuery(document).ready(function($) {
+            var currentTab = 'import';
+
+            // Tab switching
+            $('.nav-tab').on('click', function(e) {
+                e.preventDefault();
+                var tab = $(this).data('tab');
+                switchTab(tab);
+            });
+
+            function switchTab(tab) {
+                currentTab = tab;
+                $('.nav-tab').removeClass('nav-tab-active');
+                $('.nav-tab[data-tab="' + tab + '"]').addClass('nav-tab-active');
+                $('.tab-content').removeClass('active').hide();
+                $('#tab-content-' + tab).addClass('active').show();
+
+                // Load data for specific tabs
+                if (tab === 'last-import') {
+                    loadLogs();
+                } else if (tab === 'history') {
+                    loadHistory();
+                }
+            }
+
+            // Load logs
+            function loadLogs() {
+                $.post(ajaxurl, { action: 'seminargo_get_logs', tab: 'last_import' }, function(response) {
+                    if (response.success) {
+                        renderLogs(response.data);
+                    }
+                });
+            }
+
+            // Load history
+            function loadHistory() {
+                $.post(ajaxurl, { action: 'seminargo_get_logs', tab: 'history' }, function(response) {
+                    if (response.success) {
+                        renderHistory(response.data);
+                    }
+                });
+            }
+
+            // ERROR LOGGING DISABLED
+
+            function renderLogs(logs) {
+                var container = $('#logs-container');
+
+                if (!logs || logs.length === 0) {
+                    container.html('<p style="color: #868e96; padding: 15px;">No logs available. Run an import to see activity.</p>');
+                    return;
+                }
+
+                var showErrors = $('#filter-errors').is(':checked');
+                var showUpdates = $('#filter-updates').is(':checked');
+
+                // Clear and rebuild entire log display
+                container.empty();
+
+                // Logs are already reversed (newest first) from AJAX
+                logs.forEach(function(log) {
+                    if (showErrors && log.type !== 'error') return;
+                    if (showUpdates && log.type !== 'update') return;
+
+                    var entry = $('<div class="log-entry ' + log.type + '"></div>');
+                    var time = '<span class="log-time">[' + log.time + ']</span> ';
+                    var message = log.message;
+
+                    if (log.hotel) {
+                        message = message.replace(log.hotel, '<span class="log-hotel">' + log.hotel + '</span>');
+                    }
+                    if (log.field) {
+                        message += ' <span class="log-field">' + log.field + '</span>: ';
+                        if (log.old_value !== undefined) {
+                            message += '<span class="log-old">' + truncate(log.old_value) + '</span> → ';
+                        }
+                        if (log.new_value !== undefined) {
+                            message += '<span class="log-new">' + truncate(log.new_value) + '</span>';
+                        }
+                    }
+
+                    entry.html(time + message);
+                    container.append(entry);
+                });
+
+                // Auto-scroll to TOP to show newest logs (they're added first)
+                container.scrollTop(0);
+            }
+
+            function renderHistory(history) {
+                var container = $('#history-container');
+                container.empty();
+
+                if (!history || history.length === 0) {
+                    container.html('<p style="color: #666;">No import history available yet.</p>');
+                    return;
+                }
+
+                var table = $('<table class="history-table"></table>');
+                table.append('<thead><tr><th>Date & Time</th><th>Type</th><th>Fetched</th><th>Created</th><th>Updated</th><th>Drafted</th><th>Errors</th><th>Duration</th></tr></thead>');
+                var tbody = $('<tbody></tbody>');
+
+                history.forEach(function(item) {
+                    var date = new Date(item.timestamp * 1000);
+                    var dateStr = date.toLocaleString();
+                    var duration = item.duration ? formatDuration(item.duration) : '-';
+                    var typeClass = item.type === 'manual' ? 'badge-manual' : 'badge-automatic';
+
+                    var row = '<tr>' +
+                        '<td>' + dateStr + '</td>' +
+                        '<td><span class="badge ' + typeClass + '">' + item.type + '</span></td>' +
+                        '<td><strong>' + (item.total_fetched || 0) + '</strong></td>' +
+                        '<td style="color: #10b981;"><strong>' + (item.created || 0) + '</strong></td>' +
+                        '<td style="color: #3b82f6;"><strong>' + (item.updated || 0) + '</strong></td>' +
+                        '<td style="color: #f59e0b;"><strong>' + (item.drafted || 0) + '</strong></td>' +
+                        '<td style="color: ' + (item.errors > 0 ? '#ef4444' : '#666') + ';"><strong>' + (item.errors || 0) + '</strong></td>' +
+                        '<td>' + duration + '</td>' +
+                        '</tr>';
+                    tbody.append(row);
+                });
+
+                table.append(tbody);
+                container.append(table);
+            }
+
+
+            function truncate(str) {
+                str = String(str);
+                return str.length > 50 ? str.substring(0, 50) + '...' : str;
+            }
+
+            function formatDuration(seconds) {
+                if (seconds < 60) return seconds + 's';
+                if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+                return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+            }
+
+            // Live logs functions
+            function loadLiveLogs() {
+                $.post(ajaxurl, { action: 'seminargo_get_logs', tab: 'last_import' }, function(response) {
+                    if (response.success && response.data.length > 0) {
+                        renderLiveLogs(response.data);
+                        $('#live-logs-status').show();
+                        $('#live-logs-status-text').html('🟢 <strong>Import active</strong> - Logs updating every 2 seconds...');
+                    } else {
+                        var container = $('#live-logs-container');
+                        container.html('<p style="color: #868e96; margin: 0; text-align: center; padding: 40px 20px;">No import activity yet. Click "Import All Hotels Now" to start.</p>');
+                        $('#live-logs-status').hide();
+                    }
+                });
+            }
+
+            function renderLiveLogs(logs) {
+                var container = $('#live-logs-container');
+
+                if (!logs || logs.length === 0) {
+                    container.html('<p style="color: #868e96; margin: 0; text-align: center; padding: 40px 20px;">No logs available.</p>');
+                    return;
+                }
+
+                container.empty();
+
+                // Logs already reversed (newest first) from AJAX
+                logs.forEach(function(log, index) {
+                    var logType = 'info';
+                    var logColor = '#60a5fa';
+                    var logBg = '#1e3a5f';
+                    var logIcon = 'ℹ️';
+
+                    if (log.includes('✅') || log.includes('Created:') || log.includes('SUCCESS') || log.includes('COMPLETE')) {
+                        logType = 'success';
+                        logColor = '#10b981';
+                        logBg = '#1e4d3d';
+                        logIcon = '✅';
+                    } else if (log.includes('❌') || log.includes('ERROR') || log.includes('Failed')) {
+                        logType = 'error';
+                        logColor = '#ff6b6b';
+                        logBg = '#4d1e1e';
+                        logIcon = '❌';
+                    } else if (log.includes('🔄') || log.includes('Updated:') || log.includes('UPDATE')) {
+                        logType = 'update';
+                        logColor = '#fbbf24';
+                        logBg = '#4d3d1e';
+                        logIcon = '🔄';
+                    } else if (log.includes('📤') || log.includes('draft')) {
+                        logType = 'draft';
+                        logColor = '#fb923c';
+                        logBg = '#4d2d1e';
+                        logIcon = '📤';
+                    } else if (log.includes('📦') || log.includes('BATCH') || log.includes('FETCH')) {
+                        logType = 'batch';
+                        logColor = '#a78bfa';
+                        logBg = '#2e1e4d';
+                        logIcon = '📦';
+                    } else if (log.includes('🚀') || log.includes('STARTING')) {
+                        logType = 'start';
+                        logColor = '#22d3ee';
+                        logBg = '#1e3d4d';
+                        logIcon = '🚀';
+                    }
+
+                    var fadeClass = (index === 0) ? ' log-entry-fade' : '';
+
+                    var entry = $('<div>')
+                        .addClass('log-entry log-' + logType + fadeClass)
+                        .css({
+                            'padding': '10px 12px',
+                            'margin-bottom': '2px',
+                            'border-left': '3px solid ' + logColor,
+                            'background': logBg,
+                            'color': '#e5e7eb',
+                            'font-size': '13px',
+                            'line-height': '1.6',
+                            'border-radius': '3px'
+                        })
+                        .html(log);
+
+                    container.append(entry);
+                });
+
+                // Auto-scroll to TOP to show newest logs
+                container.scrollTop(0);
+            }
+
+            // Import button
+            var statusPollInterval;
+
+            $('#btn-fetch-now').on('click', function() {
+                if (!confirm('Start hotel import? This will run in the background and take 15-20 minutes.')) {
+                    return;
+                }
+
+                var btn = $(this);
+                btn.prop('disabled', true).html('⏳ Importing... Please wait');
+
+                $('#import-progress').show();
+                $('#progress-bar').css('width', '5%').text('5%').css('background', '#AC2A6E');
+                $('#progress-text').text('Import starting...');
+
+                // Show live logs status
+                $('#live-logs-status').show();
+                $('#live-logs-status-text').html('🟡 <strong>Starting import...</strong>');
+
+                // Clear logs and show waiting message
+                $('#live-logs-container').html('<p style="color: #fbbf24; margin: 0; text-align: center; padding: 40px 20px;">⏳ Import starting... Logs will appear here shortly.</p>');
+
+                // Start polling for status and logs immediately
+                statusPollInterval = setInterval(checkImportStatus, 2000);
+
+                // Trigger import with long timeout
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: { action: 'seminargo_fetch_hotels' },
+                    timeout: 3600000, // 1 hour timeout (import runs synchronously)
+                    success: function(response) {
+                        clearInterval(statusPollInterval);
+                        btn.prop('disabled', false).html('🚀 Import All Hotels Now');
+
+                        if (response.success) {
+                            $('#progress-bar').css('width', '100%').text('100%').css('background', '#10b981');
+                            $('#progress-text').html('✅ <strong>Import completed!</strong>');
+                            $('#live-logs-status-text').html('✅ <strong>Import completed successfully!</strong>');
+                            loadLiveLogs();
+                            setTimeout(function() { location.reload(); }, 3000);
+                        } else {
+                            $('#progress-bar').css('background', '#ef4444').css('width', '100%').text('Error');
+                            $('#progress-text').html('❌ <strong>Import failed:</strong> ' + (response.data || 'Unknown error'));
+                            $('#live-logs-status-text').html('🔴 <strong>Import failed</strong>');
+                            loadLiveLogs();
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        clearInterval(statusPollInterval);
+                        btn.prop('disabled', false).html('🚀 Import All Hotels Now');
+                        $('#progress-bar').css('background', '#ef4444').css('width', '100%').text('Error');
+
+                        if (status === 'timeout') {
+                            $('#progress-text').html('⏱️ <strong>Import timed out after 1 hour.</strong> Check logs - import may have completed.');
+                            $('#live-logs-status-text').html('⏱️ <strong>Timed out</strong> - Check logs below');
+                        } else {
+                            $('#progress-text').html('❌ <strong>Connection error:</strong> ' + (error || status));
+                            $('#live-logs-status-text').html('🔴 <strong>Connection failed</strong>');
+                        }
+
+                        loadLiveLogs();
+                    }
+                });
+            });
+
+            function checkImportStatus() {
+                $.post(ajaxurl, { action: 'seminargo_get_import_status' }, function(response) {
+                    if (response.success) {
+                        var status = response.data;
+                        var progress = status.progress || 0;
+
+                        // Update progress bar and message
+                        $('#progress-bar').css('width', progress + '%').text(progress + '%');
+                        $('#progress-text').html(status.message || 'Processing...');
+
+                        // Auto-load live logs during import for live feedback
+                        if (status.status === 'running') {
+                            loadLiveLogs();
+                            $('#live-logs-status').show();
+                            $('#live-logs-status-text').html('🟢 <strong>Import running</strong> - Progress: ' + progress + '% - Logs updating...');
+                        } else if (status.status === 'completed') {
+                            // Import completed - stop polling and show success
+                            clearInterval(statusPollInterval);
+                            $('#btn-fetch-now').prop('disabled', false).html('🚀 Import All Hotels Now');
+                            $('#progress-bar').css('width', '100%').text('100%').css('background', '#10b981');
+                            $('#progress-text').html(status.message || '✅ <strong>Import completed!</strong>');
+                            $('#live-logs-status-text').html('✅ <strong>Import completed successfully!</strong>');
+                            loadLiveLogs();
+                            setTimeout(function() { location.reload(); }, 3000);
+                        } else if (status.status === 'failed') {
+                            // Import failed - stop polling and show error
+                            clearInterval(statusPollInterval);
+                            $('#btn-fetch-now').prop('disabled', false).html('🚀 Import All Hotels Now');
+                            $('#progress-bar').css('background', '#ef4444').css('width', '100%').text('Error');
+                            $('#progress-text').html(status.message || '❌ <strong>Import failed</strong>');
+                            $('#live-logs-status-text').html('❌ <strong>Import failed</strong> - Check logs below');
+                            loadLiveLogs();
+                        }
+                    }
+                });
+            }
+
+            // Refresh live logs button
+            $('#btn-refresh-live-logs').on('click', function() {
+                loadLiveLogs();
+            });
+
+            // Clear live logs button
+            $('#btn-clear-live-logs').on('click', function() {
+                if (confirm('Clear current import logs? This cannot be undone.')) {
+                    $.post(ajaxurl, { action: 'seminargo_clear_logs', type: 'last' }, function(response) {
+                        $('#live-logs-container').html('<p style="color: #868e96; margin: 0; text-align: center; padding: 40px 20px;">Logs cleared. Start a new import to see activity.</p>');
+                        $('#live-logs-status').hide();
+                    });
+                }
+            });
+
+            // Load live logs on page load
+            loadLiveLogs();
+
+            // Toggle auto-import
+            $('#btn-toggle-auto-import').on('click', function() {
+                var btn = $(this);
+                var enabled = btn.text().trim() === 'Enable';
+
+                btn.prop('disabled', true);
+
+                $.post(ajaxurl, {
+                    action: 'seminargo_toggle_auto_import',
+                    enabled: enabled
+                }, function(response) {
+                    if (response.success) {
+                        location.reload();
+                    }
+                });
+            });
+
+            // Clear logs
+            $('#btn-clear-logs').on('click', function() {
+                if (confirm('Clear last import logs?')) {
+                    $.post(ajaxurl, { action: 'seminargo_clear_logs', type: 'last' }, function() {
+                        loadLogs();
+                    });
+                }
+            });
+
+            // Clear history
+            $('#btn-clear-history').on('click', function() {
+                if (confirm('Clear all import history? This cannot be undone.')) {
+                    $.post(ajaxurl, { action: 'seminargo_clear_logs', type: 'history' }, function() {
+                        loadHistory();
+                    });
+                }
+            });
+
+
+            // Filter changes
+            $('#filter-errors, #filter-updates').on('change', function() {
+                loadLogs();
+            });
+
+        });
+        </script>
+        <?php
+    }
+
+    /**
+     * AJAX handler for fetching hotels
+     */
+    public function ajax_fetch_hotels() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( __( 'Permission denied', 'seminargo' ) );
+        }
+
+        // Increase limits BEFORE starting
+        @ini_set( 'memory_limit', '1024M' );
+        @ini_set( 'max_execution_time', 0 );
+        @set_time_limit( 0 );
+        ignore_user_abort( true );
+
+        // Disable output buffering to allow real-time updates
+        if ( ob_get_level() ) {
+            ob_end_clean();
+        }
+
+        // Always start fresh - clear any previous status
+        delete_option( 'seminargo_import_status' );
+
+        // Set status to running
+        update_option( 'seminargo_import_status', [
+            'status' => 'running',
+            'started' => time(),
+            'progress' => 5,
+            'message' => 'Starting import...',
+        ] );
+
+        // Run import directly (NOT in background)
+        $result = $this->run_import( 'manual' );
+
+        // Check if import succeeded or failed critically
+        if ( $result['total_fetched'] === 0 && $result['errors'] > 0 ) {
+            // Critical failure - couldn't fetch any hotels
+            update_option( 'seminargo_import_status', [
+                'status' => 'failed',
+                'progress' => 0,
+                'message' => 'Import failed: Could not fetch hotels from API',
+                'failed' => time(),
+            ] );
+            wp_send_json_error( 'Import failed: Could not fetch hotels from API' );
+        } else {
+            // Success (even if some individual hotels had errors)
+            update_option( 'seminargo_import_status', [
+                'status' => 'completed',
+                'progress' => 100,
+                'message' => sprintf(
+                    'Import completed: %d created, %d updated, %d errors',
+                    $result['created'],
+                    $result['updated'],
+                    $result['errors']
+                ),
+                'completed' => time(),
+            ] );
+            wp_send_json_success( $result );
+        }
+    }
+
+    /**
+     * AJAX handler for checking import status
+     */
+    public function ajax_get_import_status() {
+        $status = get_option( 'seminargo_import_status', [
+            'status' => 'idle',
+            'progress' => 0,
+            'message' => 'No import running',
+        ] );
+
+        wp_send_json_success( $status );
+    }
+
+    /**
+     * AJAX handler for getting logs (last import)
+     */
+    public function ajax_get_logs() {
+        $tab = isset( $_POST['tab'] ) ? sanitize_text_field( $_POST['tab'] ) : 'last_import';
+
+        if ( $tab === 'errors' ) {
+            $logs = get_option( $this->error_logs_option, [] );
+        } elseif ( $tab === 'history' ) {
+            $logs = get_option( $this->import_history_option, [] );
+        } else {
+            // Default: last import logs
+            $logs = get_option( $this->last_sync_logs_option, [] );
+        }
+
+        wp_send_json_success( array_reverse( $logs ) );
+    }
+
+    /**
+     * AJAX handler for clearing logs
+     */
+    public function ajax_clear_logs() {
+        $type = isset( $_POST['type'] ) ? sanitize_text_field( $_POST['type'] ) : 'last';
+
+        if ( $type === 'errors' ) {
+            delete_option( $this->error_logs_option );
+        } elseif ( $type === 'history' ) {
+            delete_option( $this->import_history_option );
+        } else {
+            delete_option( $this->last_sync_logs_option );
+        }
+
+        wp_send_json_success();
+    }
+
+    /**
+     * Add log entry to current import logs
+     */
+    private function log( $type, $message, $hotel = null, $field = null, $old_value = null, $new_value = null ) {
+        $entry = [
+            'time'    => current_time( 'Y-m-d H:i:s' ),
+            'type'    => $type,
+            'message' => $message,
+        ];
+
+        if ( $hotel ) {
+            $entry['hotel'] = $hotel;
+        }
+        if ( $field ) {
+            $entry['field'] = $field;
+        }
+        if ( $old_value !== null ) {
+            $entry['old_value'] = $old_value;
+        }
+        if ( $new_value !== null ) {
+            $entry['new_value'] = $new_value;
+        }
+
+        // Add to current import logs (in memory during import)
+        $this->current_import_logs[] = $entry;
+
+        // ERROR LOGGING DISABLED - all logs go to import logs only
+    }
+
+    /**
+     * DISABLED - Error logging removed
+     */
+    private function log_error( $entry ) {
+        // ERROR LOGGING DISABLED
+        return;
+
+        // Keep only last 500 error entries
+        if ( count( $error_logs ) > 500 ) {
+            $error_logs = array_slice( $error_logs, -500 );
+        }
+
+        update_option( $this->error_logs_option, $error_logs );
+    }
+
+    /**
+     * Save current import logs and add to history
+     */
+    private function save_import_logs( $stats, $import_type = 'manual' ) {
+        // Save last sync logs (replace completely)
+        update_option( $this->last_sync_logs_option, $this->current_import_logs );
+
+        // Add to import history
+        $history = get_option( $this->import_history_option, [] );
+        $history[] = [
+            'timestamp'     => time(),
+            'type'          => $import_type,
+            'created'       => $stats['created'] ?? 0,
+            'updated'       => $stats['updated'] ?? 0,
+            'drafted'       => $stats['drafted'] ?? 0,
+            'errors'        => $stats['errors'] ?? 0,
+            'total_fetched' => $stats['total_fetched'] ?? 0,
+            'duration'      => $stats['duration'] ?? 0,
+        ];
+
+        // Keep only last 50 history entries
+        if ( count( $history ) > 50 ) {
+            $history = array_slice( $history, -50 );
+        }
+
+        update_option( $this->import_history_option, $history );
+
+        // Clear current import logs
+        $this->current_import_logs = [];
+    }
+
+    /**
+     * Fetch hotels from API with pagination
+     */
+    private function fetch_hotels_from_api() {
+        $all_hotels = [];
+        $batch_size = 200; // Fetch 200 hotels per batch (balanced between performance and reliability)
+        $max_hotels = PHP_INT_MAX; // No limit - fetch ALL hotels
+        $skip = 0;
+        $has_more = true;
+        $batch_number = 1;
+
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        $this->log( 'info', '📥 STARTING HOTEL FETCH FROM API' );
+        $this->log( 'info', '   Batch size: ' . $batch_size );
+        $this->log( 'info', '   Max hotels: UNLIMITED (PHP_INT_MAX)' );
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+
+        while ( $has_more ) {
+            $this->log( 'info', '📦 BATCH #' . $batch_number . ': Fetching skip=' . $skip . ', limit=' . $batch_size );
+
+            $query = '{
+                hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
+                    id
+                    slug
+                    refCode
+                    name
+                    businessName
+                    businessAddress1
+                    businessAddress2
+                    businessAddress3
+                    businessAddress4
+                    businessEmail
+                    businessZip
+                    businessCity
+                    businessCountry
+                    locationLongitude
+                    locationLatitude
+                    distanceToNearestAirport
+                    distanceToNearestRailroadStation
+                    rating
+                    maxCapacityRooms
+                    maxCapacityPeople
+                    hasActivePartnerContract
+                    texts {
+                        id
+                        details
+                        type
+                        language
+                    }
+                    attributes {
+                        id
+                        attribute
+                    }
+                    medias {
+                        id
+                        name
+                        mimeType
+                        width
+                        height
+                        format
+                        path
+                        url
+                        previewUrl
+                    }
+                    integrations {
+                        directBooking
+                    }
+                    spaceId
+                    space {
+                        name
+                    }
+                    meetingRooms {
+                        id
+                        name
+                        area
+                        capacityUForm
+                        capacityTheater
+                        capacityParlament
+                        capacityCircle
+                        capacityBankett
+                        capacityCocktail
+                        capacityBlock
+                        facilityId
+                        facility {
+                            id
+                            sku
+                            name
+                            header
+                            details
+                        }
+                    }
+                    cancellationRules {
+                        id
+                        sequence
+                        daysToEvent
+                        minCapacity
+                        maxCapacity
+                        minOvernight
+                        maxOvernight
+                        minTotalGuests
+                        maxTotalGuests
+                        toleranceRate
+                        rate
+                    }
+                }
+            }';
+
+            $response = wp_remote_post( $this->api_url, [
+                'body'    => json_encode( [ 'query' => $query ] ),
+                'headers' => [ 'Content-Type' => 'application/json' ],
+                'timeout' => 120, // Increased timeout for larger batches
+            ] );
+
+            if ( is_wp_error( $response ) ) {
+                $error_msg = 'API Error at skip=' . $skip . ': ' . $response->get_error_message();
+                $this->log( 'error', '❌ ' . $error_msg );
+                throw new Exception( $error_msg );
+            }
+
+            $http_code = wp_remote_retrieve_response_code( $response );
+            if ( $http_code !== 200 ) {
+                $error_msg = 'HTTP Error ' . $http_code . ' at skip=' . $skip;
+                $this->log( 'error', '❌ ' . $error_msg );
+                throw new Exception( $error_msg );
+            }
+
+            $body = wp_remote_retrieve_body( $response );
+            $data = json_decode( $body );
+
+            if ( isset( $data->errors ) ) {
+                $error_msg = 'GraphQL Error at skip=' . $skip . ': ' . json_encode( $data->errors );
+                $this->log( 'error', '❌ ' . $error_msg );
+                throw new Exception( $error_msg );
+            }
+
+            $batch_hotels = $data->data->hotelList ?? [];
+            $batch_count = count( $batch_hotels );
+            $total_so_far = count( $all_hotels ) + $batch_count;
+
+            $this->log( 'info', '   ✅ BATCH #' . $batch_number . ' RESULT: Received ' . $batch_count . ' hotels' );
+            $this->log( 'info', '   📊 Running total: ' . $total_so_far . ' hotels' );
+
+            if ( $batch_count === 0 ) {
+                // No more hotels to fetch
+                $this->log( 'info', '🏁 FETCH COMPLETE: API returned 0 hotels (end of data)' );
+                $has_more = false;
+            } else {
+                // Add to collection
+                $all_hotels = array_merge( $all_hotels, $batch_hotels );
+                $skip += $batch_size;
+                $batch_number++;
+
+                // If we got fewer hotels than the batch size, we're done
+                if ( $batch_count < $batch_size ) {
+                    $this->log( 'info', '🏁 FETCH COMPLETE: Last batch had ' . $batch_count . ' hotels (less than ' . $batch_size . ')' );
+                    $has_more = false;
+                } else {
+                    $this->log( 'info', '   ⏱️ Pausing 0.5 seconds before next batch...' );
+                    // Small delay between batches to not overload the API (0.5 seconds)
+                    usleep( 500000 );
+                }
+            }
+        }
+
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        $this->log( 'info', '✅ FETCH SUMMARY' );
+        $this->log( 'info', '   Total batches: ' . ( $batch_number - 1 ) );
+        $this->log( 'info', '   Total hotels: ' . count( $all_hotels ) );
+        $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+        return $all_hotels;
+    }
+
+    /**
+     * Run the import process
+     */
+    public function run_import( $import_type = 'manual' ) {
+        $start_time = time();
+
+        $stats = [
+            'created'       => 0,
+            'updated'       => 0,
+            'drafted'       => 0,
+            'errors'        => 0,
+            'total_fetched' => 0,
+            'time'          => $start_time,
+            'duration'      => 0,
+        ];
+
+        // Clear current import logs at the start
+        $this->current_import_logs = [];
+
+        $this->log( 'info', '' );
+        $this->log( 'info', '🚀 STARTING HOTEL IMPORT PROCESS' );
+        $this->log( 'info', '   Timestamp: ' . date( 'Y-m-d H:i:s' ) );
+        $this->log( 'info', '   Type: ' . ucfirst( $import_type ) . ' import' );
+
+        try {
+            // Update progress: Fetching from API
+            update_option( 'seminargo_import_status', [
+                'status' => 'running',
+                'progress' => 10,
+                'message' => 'Fetching hotels from API...',
+            ] );
+
+            $hotels = $this->fetch_hotels_from_api();
+            $stats['total_fetched'] = count( $hotels );
+
+            if ( empty( $hotels ) ) {
+                $this->log( 'error', '⚠️ No hotels received from API' );
+                $stats['errors']++;
+                $stats['duration'] = time() - $start_time;
+                update_option( $this->last_import_option, $stats );
+                $this->save_import_logs( $stats, $import_type );
+                return $stats;
+            }
+
+            // Update progress: Fetched successfully
+            update_option( 'seminargo_import_status', [
+                'status' => 'running',
+                'progress' => 25,
+                'message' => sprintf( 'Fetched %d hotels, starting processing...', count( $hotels ) ),
+            ] );
+
+            $this->log( 'info', '' );
+            $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+            $this->log( 'info', '📦 STARTING HOTEL PROCESSING' );
+            $this->log( 'info', '   Hotels to process: ' . count( $hotels ) );
+            $this->log( 'info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' );
+
+            // Get all API hotel IDs (as strings for comparison)
+            $api_hotel_ids = [];
+            foreach ( $hotels as $hotel ) {
+                $api_hotel_ids[] = strval( $hotel->id );
+            }
+
+            // Get ALL existing WordPress hotel IDs (not just previously imported)
+            $existing_wp_hotels = $this->get_all_wordpress_hotel_ids();
+            $this->log( 'info', '📊 Found ' . count( $existing_wp_hotels ) . ' existing hotels in WordPress' );
+
+            // Process each hotel from API
+            $total_hotels = count( $hotels );
+            $processed = 0;
+            foreach ( $hotels as $hotel ) {
+                try {
+                    $result = $this->process_hotel( $hotel );
+                    if ( $result === 'created' ) {
+                        $stats['created']++;
+                    } elseif ( $result === 'updated' ) {
+                        $stats['updated']++;
+                    }
+                } catch ( Exception $e ) {
+                    $this->log( 'error', '❌ Error processing hotel ' . $hotel->businessName . ': ' . $e->getMessage(), $hotel->businessName );
+                    $stats['errors']++;
+                }
+
+                // Update progress every 100 hotels
+                $processed++;
+                if ( $processed % 100 === 0 || $processed === $total_hotels ) {
+                    $progress = 25 + ( ( $processed / $total_hotels ) * 65 ); // 25% to 90%
+                    update_option( 'seminargo_import_status', [
+                        'status' => 'running',
+                        'progress' => round( $progress ),
+                        'message' => sprintf( 'Processing hotels: %d / %d', $processed, $total_hotels ),
+                    ] );
+                }
+            }
+
+            // Draft ALL WordPress hotels that are NOT in the API feed
+            $hotels_to_draft = array_diff( $existing_wp_hotels, $api_hotel_ids );
+
+            if ( ! empty( $hotels_to_draft ) ) {
+                $this->log( 'info', '📤 Found ' . count( $hotels_to_draft ) . ' hotels to set as draft (not in API)' );
+            }
+
+            foreach ( $hotels_to_draft as $wp_hotel_id ) {
+                $drafted = $this->draft_removed_hotel( $wp_hotel_id );
+                if ( $drafted ) {
+                    $stats['drafted']++;
+                }
+            }
+
+            // Save current API hotel IDs for reference
+            update_option( $this->imported_ids_option, $api_hotel_ids );
+
+            $stats['duration'] = time() - $start_time;
+            $this->log( 'success', '✅ Import completed: ' . $stats['created'] . ' created, ' . $stats['updated'] . ' updated, ' . $stats['drafted'] . ' drafted, ' . $stats['errors'] . ' errors' );
+            $this->log( 'info', '⏱️ Total duration: ' . $stats['duration'] . ' seconds' );
+
+        } catch ( Exception $e ) {
+            $this->log( 'error', '💥 Import failed: ' . $e->getMessage() );
+            $stats['errors']++;
+            $stats['duration'] = time() - $start_time;
+        }
+
+        update_option( $this->last_import_option, $stats );
+        $this->save_import_logs( $stats, $import_type );
+
+        return $stats;
+    }
+
+    /**
+     * Get all hotel IDs from WordPress database
+     */
+    private function get_all_wordpress_hotel_ids() {
+        global $wpdb;
+
+        $results = $wpdb->get_col(
+            "SELECT DISTINCT pm.meta_value
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = 'hotel_id'
+             AND p.post_type = 'hotel'
+             AND p.post_status = 'publish'
+             AND pm.meta_value IS NOT NULL
+             AND pm.meta_value != ''"
+        );
+
+        return array_map( 'strval', $results );
+    }
+
+    /**
+     * Draft a hotel that was removed from the API feed
+     */
+    private function draft_removed_hotel( $hotel_id ) {
+        $args = [
+            'post_type'      => 'hotel',
+            'post_status'    => 'publish',
+            'meta_query'     => [
+                [
+                    'key'   => 'hotel_id',
+                    'value' => $hotel_id,
+                ],
+            ],
+            'posts_per_page' => 1,
+        ];
+
+        $query = new WP_Query( $args );
+
+        if ( $query->have_posts() ) {
+            $post = $query->posts[0];
+            wp_update_post( [
+                'ID'          => $post->ID,
+                'post_status' => 'draft',
+            ] );
+            $this->log( 'draft', '📤 Hotel removed from feed, set to draft: ' . $post->post_title, $post->post_title );
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Process a single hotel
+     */
+    private function process_hotel( $hotel ) {
+        // Check if hotel exists
+        $args = [
+            'post_type'      => 'hotel',
+            'post_status'    => [ 'publish', 'draft' ],
+            'meta_query'     => [
+                [
+                    'key'   => 'hotel_id',
+                    'value' => $hotel->id,
+                ],
+            ],
+            'posts_per_page' => 1,
+        ];
+
+        $query = new WP_Query( $args );
+        $is_new = ! $query->have_posts();
+        $post_id = null;
+
+        // Prepare content
+        $content = '';
+        if ( ! empty( $hotel->texts ) ) {
+            foreach ( $hotel->texts as $text ) {
+                if ( $text->language === 'de' && $text->type === 'description' ) {
+                    $content = $text->details;
+                    break;
+                }
+            }
+            // Fallback to first text
+            if ( empty( $content ) && ! empty( $hotel->texts[0]->details ) ) {
+                $content = $hotel->texts[0]->details;
+            }
+        }
+
+        // Use 'name' for display, fallback to 'businessName' if name is empty
+        $hotel_title = ! empty( $hotel->name ) ? $hotel->name : $hotel->businessName;
+
+        // Use API slug as WordPress post slug (sanitized)
+        $wp_slug = ! empty( $hotel->slug ) ? sanitize_title( $hotel->slug ) : sanitize_title( $hotel_title );
+
+        if ( $is_new ) {
+            // Create new hotel
+            $post_data = [
+                'post_title'   => $hotel_title,
+                'post_name'    => $wp_slug,
+                'post_content' => $content,
+                'post_status'  => 'publish',
+                'post_type'    => 'hotel',
+            ];
+
+            $post_id = wp_insert_post( $post_data );
+
+            if ( is_wp_error( $post_id ) ) {
+                throw new Exception( $post_id->get_error_message() );
+            }
+
+            $this->log( 'success', '✨ Created new hotel: ' . $hotel_title, $hotel_title );
+
+            // Set all meta fields for new hotel
+            $this->update_hotel_meta( $post_id, $hotel, true );
+
+            // IMAGES DISABLED - WordPress keeps blocking uploads despite filters
+            // $this->process_hotel_images( $post_id, $hotel );
+
+            return 'created';
+
+        } else {
+            // Update existing hotel
+            $post = $query->posts[0];
+            $post_id = $post->ID;
+            $has_changes = false;
+
+            // Check and update title
+            if ( $post->post_title !== $hotel_title ) {
+                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'title', $post->post_title, $hotel_title );
+                $has_changes = true;
+            }
+
+            // Check and update slug
+            if ( $post->post_name !== $wp_slug ) {
+                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'slug', $post->post_name, $wp_slug );
+                $has_changes = true;
+            }
+
+            // Check and update content
+            if ( $post->post_content !== $content ) {
+                $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'content', substr( $post->post_content, 0, 50 ) . '...', substr( $content, 0, 50 ) . '...' );
+                $has_changes = true;
+            }
+
+            // Update post if changed
+            if ( $has_changes || $post->post_status === 'draft' ) {
+                wp_update_post( [
+                    'ID'           => $post_id,
+                    'post_title'   => $hotel_title,
+                    'post_name'    => $wp_slug,
+                    'post_content' => $content,
+                    'post_status'  => 'publish',
+                ] );
+            }
+
+            // Update meta fields and check for changes
+            $meta_changed = $this->update_hotel_meta( $post_id, $hotel, false );
+
+            if ( $has_changes || $meta_changed ) {
+                return 'updated';
+            }
+
+            return 'unchanged';
+        }
+    }
+
+    /**
+     * Update hotel meta fields
+     */
+    private function update_hotel_meta( $post_id, $hotel, $is_new ) {
+        $has_changes = false;
+        $hotel_name = $hotel->businessName;
+
+        // Extract stars from attributes
+        $stars = $this->extract_stars_from_attributes( $hotel->attributes ?? [] );
+
+        // Extract texts by type (German preferred)
+        $texts = $this->extract_texts_by_type( $hotel->texts ?? [] );
+
+        // Build full address
+        $full_address = $this->build_full_address( $hotel );
+
+        $meta_fields = [
+            // Basic info
+            'hotel_id'      => $hotel->id,
+            'api_slug'      => $hotel->slug ?? '',
+            'shop_url'      => $this->shop_url . ( $hotel->slug ?? '' ),
+            'ref_code'      => $hotel->refCode ?? '',
+            'hotel_name'    => $hotel->name ?? '',
+            'business_name' => $hotel->businessName ?? '',
+
+            // Address fields
+            'business_address_1' => $hotel->businessAddress1 ?? '',
+            'business_address_2' => $hotel->businessAddress2 ?? '',
+            'business_address_3' => $hotel->businessAddress3 ?? '',
+            'business_address_4' => $hotel->businessAddress4 ?? '',
+            'business_email'     => $hotel->businessEmail ?? '',
+            'business_zip'       => $hotel->businessZip ?? '',
+            'business_city'      => $hotel->businessCity ?? '',
+            'business_country'   => $hotel->businessCountry ?? '',
+            'full_address'       => $full_address,
+
+            // Location
+            'location_longitude'                   => $hotel->locationLongitude,
+            'location_latitude'                    => $hotel->locationLatitude,
+            'distance_to_nearest_airport'          => $hotel->distanceToNearestAirport,
+            'distance_to_nearest_railroad_station' => $hotel->distanceToNearestRailroadStation,
+
+            // Rating & Stars
+            'rating' => $hotel->rating,
+            'stars'  => $stars,
+
+            // Capacity (from API or calculated)
+            'max_capacity_rooms'  => $hotel->maxCapacityRooms ?? 0,
+            'max_capacity_people' => $hotel->maxCapacityPeople ?? 0,
+
+            // Partner info
+            'has_active_partner_contract' => $hotel->hasActivePartnerContract ?? false,
+            'direct_booking'              => $hotel->integrations->directBooking ?? false,
+            'space_name'                  => $hotel->space->name ?? '',
+            'space_id'                    => $hotel->spaceId ?? 0,
+
+            // Texts - German descriptions
+            'description'    => $texts['HOTEL_DESCRIPTION'] ?? '',
+            'arrival_car'    => $texts['ARRIVAL_CAR'] ?? '',
+            'arrival_flight' => $texts['ARRIVAL_FLIGHT'] ?? '',
+            'arrival_train'  => $texts['ARRIVAL_TRAIN'] ?? '',
+
+            // All texts as JSON for reference
+            'texts_json' => json_encode( $hotel->texts ?? [] ),
+
+            // Attributes (full JSON)
+            'attributes' => json_encode( $hotel->attributes ?? [] ),
+
+            // Extracted attribute lists for easier filtering
+            'amenities_list' => json_encode( $this->extract_amenities( $hotel->attributes ?? [] ) ),
+
+            // Meeting rooms (full JSON with facility details)
+            'meeting_rooms' => json_encode( $hotel->meetingRooms ?? [] ),
+
+            // Cancellation rules
+            'cancellation_rules' => json_encode( $hotel->cancellationRules ?? [] ),
+
+            // Media metadata (full JSON)
+            'medias_json' => json_encode( $hotel->medias ?? [] ),
+        ];
+
+        // Calculate capacity from meeting rooms if API doesn't provide it
+        $max_capacity = $hotel->maxCapacityPeople ?? 0;
+        $max_rooms = $hotel->maxCapacityRooms ?? 0;
+
+        if ( $max_capacity == 0 && ! empty( $hotel->meetingRooms ) ) {
+            foreach ( $hotel->meetingRooms as $room ) {
+                $room_max = max(
+                    $room->capacityTheater ?? 0,
+                    $room->capacityParlament ?? 0,
+                    $room->capacityBankett ?? 0,
+                    $room->capacityCocktail ?? 0,
+                    $room->capacityUForm ?? 0,
+                    $room->capacityBlock ?? 0,
+                    $room->capacityCircle ?? 0
+                );
+                $max_capacity = max( $max_capacity, $room_max );
+            }
+        }
+
+        if ( $max_rooms == 0 && ! empty( $hotel->meetingRooms ) ) {
+            $max_rooms = count( $hotel->meetingRooms );
+        }
+
+        $meta_fields['capacity'] = $max_capacity;
+        $meta_fields['rooms'] = $max_rooms;
+
+        foreach ( $meta_fields as $key => $value ) {
+            $old_value = get_post_meta( $post_id, $key, true );
+            $new_value = is_bool( $value ) ? ( $value ? '1' : '0' ) : $value;
+
+            if ( $old_value != $new_value ) {
+                update_post_meta( $post_id, $key, $new_value );
+
+                // Also update ACF field if function exists
+                if ( function_exists( 'update_field' ) ) {
+                    update_field( $key, $new_value, $post_id );
+                }
+
+                if ( ! $is_new ) {
+                    $this->log( 'update', 'Updated hotel: ' . $hotel_name, $hotel_name, $key, $old_value, $new_value );
+                }
+                $has_changes = true;
+            }
+        }
+
+        return $has_changes;
+    }
+
+    /**
+     * Extract star rating from attributes
+     */
+    private function extract_stars_from_attributes( $attributes ) {
+        $star_map = [
+            'CATEGORY_TWO_STARS'           => 2,
+            'CATEGORY_THREE_STARS'         => 3,
+            'CATEGORY_THREE_STARS_SUPERIOR' => 3.5,
+            'CATEGORY_FOUR_STARS'          => 4,
+            'CATEGORY_FOUR_STARS_SUPERIOR' => 4.5,
+            'CATEGORY_FIVE_STARS'          => 5,
+            'CATEGORY_FIVE_STARS_SUPERIOR' => 5.5,
+        ];
+
+        foreach ( $attributes as $attr ) {
+            $attrName = is_object( $attr ) ? ( $attr->attribute ?? '' ) : ( $attr['attribute'] ?? '' );
+            if ( isset( $star_map[ $attrName ] ) ) {
+                return $star_map[ $attrName ];
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Extract texts by type, preferring German
+     */
+    private function extract_texts_by_type( $texts ) {
+        $result = [
+            'HOTEL_DESCRIPTION' => '',
+            'ARRIVAL_CAR'       => '',
+            'ARRIVAL_FLIGHT'    => '',
+            'ARRIVAL_TRAIN'     => '',
+        ];
+
+        // First pass: get German texts
+        foreach ( $texts as $text ) {
+            $type = is_object( $text ) ? ( $text->type ?? '' ) : ( $text['type'] ?? '' );
+            $lang = is_object( $text ) ? ( $text->language ?? '' ) : ( $text['language'] ?? '' );
+            $details = is_object( $text ) ? ( $text->details ?? '' ) : ( $text['details'] ?? '' );
+
+            if ( $lang === 'de' && isset( $result[ $type ] ) && empty( $result[ $type ] ) ) {
+                $result[ $type ] = $details;
+            }
+        }
+
+        // Second pass: fill in any empty ones with any language
+        foreach ( $texts as $text ) {
+            $type = is_object( $text ) ? ( $text->type ?? '' ) : ( $text['type'] ?? '' );
+            $details = is_object( $text ) ? ( $text->details ?? '' ) : ( $text['details'] ?? '' );
+
+            if ( isset( $result[ $type ] ) && empty( $result[ $type ] ) ) {
+                $result[ $type ] = $details;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Build full address string
+     */
+    private function build_full_address( $hotel ) {
+        $parts = array_filter( [
+            $hotel->businessAddress1 ?? '',
+            $hotel->businessAddress2 ?? '',
+            $hotel->businessAddress3 ?? '',
+            $hotel->businessAddress4 ?? '',
+        ] );
+
+        $cityLine = array_filter( [
+            $hotel->businessZip ?? '',
+            $hotel->businessCity ?? '',
+        ] );
+
+        if ( ! empty( $cityLine ) ) {
+            $parts[] = implode( ' ', $cityLine );
+        }
+
+        if ( ! empty( $hotel->businessCountry ) ) {
+            $parts[] = $hotel->businessCountry;
+        }
+
+        return implode( ', ', $parts );
+    }
+
+    /**
+     * Extract amenities from attributes for easier filtering
+     */
+    private function extract_amenities( $attributes ) {
+        $amenities = [
+            'room'     => [],
+            'design'   => [],
+            'activity' => [],
+            'wellness' => [],
+            'facility' => [],
+            'ecolabel' => [],
+        ];
+
+        foreach ( $attributes as $attr ) {
+            $attrName = is_object( $attr ) ? ( $attr->attribute ?? '' ) : ( $attr['attribute'] ?? '' );
+
+            if ( strpos( $attrName, 'ROOM_' ) === 0 ) {
+                $amenities['room'][] = $attrName;
+            } elseif ( strpos( $attrName, 'DESIGN_' ) === 0 ) {
+                $amenities['design'][] = $attrName;
+            } elseif ( strpos( $attrName, 'ACTIVITY_' ) === 0 ) {
+                $amenities['activity'][] = $attrName;
+            } elseif ( strpos( $attrName, 'WELLNESS_' ) === 0 ) {
+                $amenities['wellness'][] = $attrName;
+            } elseif ( strpos( $attrName, 'HOTELFACILITY_' ) === 0 ) {
+                $amenities['facility'][] = $attrName;
+            } elseif ( strpos( $attrName, 'ECOLABEL_' ) === 0 ) {
+                $amenities['ecolabel'][] = $attrName;
+            }
+        }
+
+        return $amenities;
+    }
+
+    /**
+     * Process hotel images
+     */
+    private function process_hotel_images( $post_id, $hotel ) {
+        if ( empty( $hotel->medias ) ) {
+            return;
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+
+        // Add filters ONCE at the start to allow ALL image uploads
+        add_filter( 'upload_mimes', [ $this, 'allow_all_image_mimes' ], 1 );
+        add_filter( 'wp_check_filetype_and_ext', [ $this, 'bypass_filetype_check' ], 1, 4 );
+        add_filter( 'wp_handle_sideload_prefilter', [ $this, 'bypass_sideload_check' ], 1 );
+
+        $first_image = true;
+        $gallery_ids = [];
+
+        foreach ( $hotel->medias as $media ) {
+            try {
+                $image_url = $media->previewUrl ?? $media->url;
+                if ( empty( $image_url ) ) {
+                    continue;
+                }
+
+                // Get and sanitize filename
+                $image_name = basename( $media->url ?? $media->path );
+
+                // Better sanitization for filenames with spaces and special chars
+                $image_name = sanitize_file_name( $image_name );
+                $image_name = str_replace( [ ' ', '+' ], '-', $image_name );
+                $image_name = preg_replace( '/[^a-zA-Z0-9._-]/', '', $image_name );
+
+                // Check if image already exists
+                $existing = get_posts( [
+                    'post_type'      => 'attachment',
+                    'meta_query'     => [
+                        [
+                            'key'   => '_seminargo_source_url',
+                            'value' => $image_url,
+                        ],
+                    ],
+                    'posts_per_page' => 1,
+                ] );
+
+                if ( ! empty( $existing ) ) {
+                    $attachment_id = $existing[0]->ID;
+                } else {
+                    // Download and create attachment
+                    $tmp = download_url( $image_url );
+
+                    if ( is_wp_error( $tmp ) ) {
+                        $this->log( 'error', 'Failed to download image: ' . $image_url, $hotel->businessName );
+                        continue;
+                    }
+
+                    $file_array = [
+                        'name'     => $image_name,
+                        'tmp_name' => $tmp,
+                    ];
+
+                    $attachment_id = media_handle_sideload( $file_array, $post_id );
+
+                    if ( is_wp_error( $attachment_id ) ) {
+                        @unlink( $tmp );
+                        $this->log( 'error', 'Failed to create attachment: ' . $attachment_id->get_error_message(), $hotel->businessName );
+                        continue;
+                    }
+
+                    // Store source URL for deduplication
+                    update_post_meta( $attachment_id, '_seminargo_source_url', $image_url );
+                }
+
+                $gallery_ids[] = $attachment_id;
+
+                // Set first image as featured
+                if ( $first_image ) {
+                    set_post_thumbnail( $post_id, $attachment_id );
+                    $first_image = false;
+                }
+
+            } catch ( Exception $e ) {
+                $this->log( 'error', 'Image processing error: ' . $e->getMessage(), $hotel->businessName );
+            }
+        }
+
+        // Save gallery IDs
+        if ( ! empty( $gallery_ids ) ) {
+            update_post_meta( $post_id, 'gallery', $gallery_ids );
+            if ( function_exists( 'update_field' ) ) {
+                update_field( 'gallery', $gallery_ids, $post_id );
+            }
+        }
+
+        // Remove filters after all images processed
+        remove_filter( 'upload_mimes', [ $this, 'allow_all_image_mimes' ], 1 );
+        remove_filter( 'wp_check_filetype_and_ext', [ $this, 'bypass_filetype_check' ], 1 );
+        remove_filter( 'wp_handle_sideload_prefilter', [ $this, 'bypass_sideload_check' ], 1 );
+    }
+
+    /**
+     * Allow all image mime types during import
+     */
+    public function allow_all_image_mimes( $mimes ) {
+        $mimes['jpg|jpeg|jpe'] = 'image/jpeg';
+        $mimes['gif'] = 'image/gif';
+        $mimes['png'] = 'image/png';
+        $mimes['bmp'] = 'image/bmp';
+        $mimes['webp'] = 'image/webp';
+        $mimes['svg'] = 'image/svg+xml';
+        $mimes['ico'] = 'image/x-icon';
+        return $mimes;
+    }
+
+    /**
+     * Bypass file type checking during import
+     */
+    public function bypass_filetype_check( $data, $file, $filename, $mimes ) {
+        // Force accept all image extensions
+        $ext = strtolower( pathinfo( $filename, PATHINFO_EXTENSION ) );
+        $allowed_exts = [ 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico' ];
+
+        if ( in_array( $ext, $allowed_exts ) ) {
+            $data['ext'] = $ext;
+            $data['type'] = 'image/' . ( $ext === 'jpg' ? 'jpeg' : $ext );
+            $data['proper_filename'] = $filename;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Bypass sideload prefilter check
+     */
+    public function bypass_sideload_check( $file ) {
+        // Skip the file type check entirely
+        $file['error'] = false;
+        return $file;
+    }
+
+    /**
+     * Run automatic import (called by cron)
+     * Runs a full import automatically
+     */
+    public function run_auto_import_batch() {
+        // Check if auto-import is enabled
+        if ( ! get_option( $this->auto_import_enabled_option, false ) ) {
+            return;
+        }
+
+        // Increase limits for cron
+        @ini_set( 'memory_limit', '512M' );
+        @ini_set( 'max_execution_time', 600 ); // 10 minutes for cron
+
+        // Run the full import with 'automatic' type
+        $this->run_import( 'automatic' );
+    }
+
+    /**
+     * Fetch a specific batch of hotels from API
+     */
+    private function fetch_hotels_batch_from_api( $offset, $limit ) {
+        $query = '{
+            hotelList(skip: ' . $offset . ', limit: ' . $limit . ') {
+                id
+                slug
+                refCode
+                name
+                businessName
+                businessAddress1
+                businessAddress2
+                businessAddress3
+                businessAddress4
+                businessEmail
+                businessZip
+                businessCity
+                businessCountry
+                locationLongitude
+                locationLatitude
+                distanceToNearestAirport
+                distanceToNearestRailroadStation
+                rating
+                maxCapacityRooms
+                maxCapacityPeople
+                hasActivePartnerContract
+                texts {
+                    id
+                    details
+                    type
+                    language
+                }
+                attributes {
+                    id
+                    attribute
+                }
+                medias {
+                    id
+                    name
+                    mimeType
+                    width
+                    height
+                    format
+                    path
+                    url
+                    previewUrl
+                }
+                integrations {
+                    directBooking
+                }
+                spaceId
+                space {
+                    name
+                }
+                meetingRooms {
+                    id
+                    name
+                    area
+                    capacityUForm
+                    capacityTheater
+                    capacityParlament
+                    capacityCircle
+                    capacityBankett
+                    capacityCocktail
+                    capacityBlock
+                    facilityId
+                    facility {
+                        id
+                        sku
+                        name
+                        header
+                        details
+                    }
+                }
+            }
+        }';
+
+        $response = wp_remote_post( $this->api_url, [
+            'body'    => json_encode( [ 'query' => $query ] ),
+            'headers' => [ 'Content-Type' => 'application/json' ],
+            'timeout' => 120,
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            throw new Exception( 'API Error: ' . $response->get_error_message() );
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $data = json_decode( $body );
+
+        if ( isset( $data->errors ) ) {
+            throw new Exception( 'GraphQL Error: ' . json_encode( $data->errors ) );
+        }
+
+        return $data->data->hotelList ?? [];
+    }
+
+    /**
+     * AJAX: Toggle auto-import on/off
+     */
+    public function ajax_toggle_auto_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $enabled = isset( $_POST['enabled'] ) && $_POST['enabled'] === 'true';
+        update_option( $this->auto_import_enabled_option, $enabled );
+
+        // Re-register cron (will schedule or unschedule based on $enabled)
+        $this->register_cron();
+
+        wp_send_json_success( [
+            'enabled' => $enabled,
+            'message' => $enabled ? 'Auto-import enabled' : 'Auto-import disabled',
+        ] );
+    }
+
+    /**
+     * AJAX: Reset auto-import progress
+     */
+    public function ajax_reset_auto_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        update_option( $this->auto_import_progress_option, [
+            'offset' => 0,
+            'total_imported' => 0,
+            'is_complete' => false,
+            'last_run' => 0,
+        ] );
+
+        wp_send_json_success( [ 'message' => 'Progress reset' ] );
+    }
+
+    /**
+     * AJAX: Get auto-import status
+     */
+    public function ajax_get_auto_import_status() {
+        $enabled = get_option( $this->auto_import_enabled_option, false );
+        $progress = get_option( $this->auto_import_progress_option, [
+            'offset' => 0,
+            'total_imported' => 0,
+            'is_complete' => false,
+            'last_run' => 0,
+        ] );
+        $next_run = wp_next_scheduled( 'seminargo_hotels_cron' );
+
+        wp_send_json_success( [
+            'enabled' => $enabled,
+            'progress' => $progress,
+            'next_run' => $next_run,
+            'next_run_formatted' => $next_run ? date( 'Y-m-d H:i:s', $next_run ) : 'Not scheduled',
+        ] );
+    }
+}
+
+// Initialize the importer
+new Seminargo_Hotel_Importer();
+
+// Cleanup cron on theme switch
+add_action( 'switch_theme', function() {
+    wp_clear_scheduled_hook( 'seminargo_hotels_cron' );
+} );
