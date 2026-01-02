@@ -1729,11 +1729,52 @@ class Seminargo_Hotel_Importer {
         $this->flush_logs();
 
         // Schedule immediate first batch to fetch hotels
-        wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+        $scheduled = wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+        
+        // #region agent log
+        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+        @file_put_contents( $log_path, json_encode( [
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'H8',
+            'location' => 'ajax_start_batched_import:schedule',
+            'message' => 'Scheduled batch event',
+            'data' => [
+                'scheduled' => $scheduled !== false,
+                'scheduled_time' => time(),
+                'disable_wp_cron' => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+            ],
+            'timestamp' => time() * 1000
+        ] ) . "\n", FILE_APPEND | LOCK_EX );
+        // #endregion
         
         // Force WP Cron to spawn immediately (WP Cron may not fire reliably on production)
         if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
-            spawn_cron();
+            // #region agent log
+            @file_put_contents( $log_path, json_encode( [
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'H8',
+                'location' => 'ajax_start_batched_import:spawn_cron',
+                'message' => 'Calling spawn_cron',
+                'data' => [ 'before_spawn' => true ],
+                'timestamp' => time() * 1000
+            ] ) . "\n", FILE_APPEND | LOCK_EX );
+            // #endregion
+            
+            $spawn_result = spawn_cron();
+            
+            // #region agent log
+            @file_put_contents( $log_path, json_encode( [
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'H8',
+                'location' => 'ajax_start_batched_import:spawn_cron_result',
+                'message' => 'spawn_cron result',
+                'data' => [ 'spawn_result' => $spawn_result, 'after_spawn' => true ],
+                'timestamp' => time() * 1000
+            ] ) . "\n", FILE_APPEND | LOCK_EX );
+            // #endregion
         }
 
         wp_send_json_success([
@@ -1778,11 +1819,52 @@ class Seminargo_Hotel_Importer {
         $this->flush_logs();
 
         // Schedule first Phase 2 batch immediately
-        wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+        $scheduled = wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+        
+        // #region agent log
+        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+        @file_put_contents( $log_path, json_encode( [
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'H8',
+            'location' => 'ajax_skip_to_phase2:schedule',
+            'message' => 'Scheduled Phase 2 batch event',
+            'data' => [
+                'scheduled' => $scheduled !== false,
+                'scheduled_time' => time(),
+                'disable_wp_cron' => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+            ],
+            'timestamp' => time() * 1000
+        ] ) . "\n", FILE_APPEND | LOCK_EX );
+        // #endregion
         
         // Force WP Cron to spawn immediately (WP Cron may not fire reliably on production)
         if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
-            spawn_cron();
+            // #region agent log
+            @file_put_contents( $log_path, json_encode( [
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'H8',
+                'location' => 'ajax_skip_to_phase2:spawn_cron',
+                'message' => 'Calling spawn_cron for Phase 2',
+                'data' => [ 'before_spawn' => true ],
+                'timestamp' => time() * 1000
+            ] ) . "\n", FILE_APPEND | LOCK_EX );
+            // #endregion
+            
+            $spawn_result = spawn_cron();
+            
+            // #region agent log
+            @file_put_contents( $log_path, json_encode( [
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'H8',
+                'location' => 'ajax_skip_to_phase2:spawn_cron_result',
+                'message' => 'spawn_cron result for Phase 2',
+                'data' => [ 'spawn_result' => $spawn_result, 'after_spawn' => true ],
+                'timestamp' => time() * 1000
+            ] ) . "\n", FILE_APPEND | LOCK_EX );
+            // #endregion
         }
 
         wp_send_json_success([
@@ -1810,20 +1892,68 @@ class Seminargo_Hotel_Importer {
      */
     public function process_single_batch() {
         // #region agent log
-        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:entry', 'message' => 'process_single_batch called', 'data' => [ 'memory_limit' => ini_get( 'memory_limit' ), 'max_execution_time' => ini_get( 'max_execution_time' ), 'memory_usage' => memory_get_usage( true ), 'peak_memory' => memory_get_peak_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+        $log_data = [
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'H1,H2,H3,H5,H8',
+            'location' => 'process_single_batch:entry',
+            'message' => 'process_single_batch CALLED',
+            'data' => [
+                'memory_limit' => ini_get( 'memory_limit' ),
+                'max_execution_time' => ini_get( 'max_execution_time' ),
+                'memory_usage' => memory_get_usage( true ),
+                'peak_memory' => memory_get_peak_usage( true ),
+                'php_version' => PHP_VERSION,
+                'wp_version' => get_bloginfo( 'version' ),
+                'is_cron' => defined( 'DOING_CRON' ) && DOING_CRON,
+                'is_ajax' => defined( 'DOING_AJAX' ) && DOING_AJAX,
+                'request_method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
+                'script_name' => $_SERVER['SCRIPT_NAME'] ?? 'unknown',
+            ],
+            'timestamp' => time() * 1000
+        ];
+        @file_put_contents( $log_path, json_encode( $log_data ) . "\n", FILE_APPEND | LOCK_EX );
         // #endregion
         
         $progress = get_option( 'seminargo_batched_import_progress', null );
 
+        // #region agent log
+        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+        @file_put_contents( $log_path, json_encode( [
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'H8',
+            'location' => 'process_single_batch:progress_check',
+            'message' => 'Checking progress option',
+            'data' => [
+                'progress_exists' => $progress !== null,
+                'progress_status' => $progress['status'] ?? 'null',
+                'progress_phase' => $progress['phase'] ?? 'null',
+                'progress_offset' => $progress['offset'] ?? 'null',
+            ],
+            'timestamp' => time() * 1000
+        ] ) . "\n", FILE_APPEND | LOCK_EX );
+        // #endregion
+
         if ( ! $progress || $progress['status'] !== 'running' ) {
             // #region agent log
-            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:early_exit', 'message' => 'Early exit - not running', 'data' => [ 'progress' => $progress ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+            @file_put_contents( $log_path, json_encode( [
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'H8',
+                'location' => 'process_single_batch:early_exit',
+                'message' => 'Early exit - not running',
+                'data' => [ 'progress' => $progress ],
+                'timestamp' => time() * 1000
+            ] ) . "\n", FILE_APPEND | LOCK_EX );
             // #endregion
             return; // Not running or already complete
         }
 
         // #region agent log
-        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:before_ini_set', 'message' => 'Before ini_set', 'data' => [ 'phase' => $progress['phase'] ?? 'unknown', 'offset' => $progress['offset'] ?? 0 ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+        @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:before_ini_set', 'message' => 'Before ini_set', 'data' => [ 'phase' => $progress['phase'] ?? 'unknown', 'offset' => $progress['offset'] ?? 0 ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
         // #endregion
 
         @ini_set( 'memory_limit', '1024M' );
@@ -1832,7 +1962,8 @@ class Seminargo_Hotel_Importer {
         @ini_set( 'max_execution_time', 50 );
         
         // #region agent log
-        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:after_ini_set', 'message' => 'After ini_set', 'data' => [ 'memory_limit' => ini_get( 'memory_limit' ), 'max_execution_time' => ini_get( 'max_execution_time' ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+        @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:after_ini_set', 'message' => 'After ini_set', 'data' => [ 'memory_limit' => ini_get( 'memory_limit' ), 'max_execution_time' => ini_get( 'max_execution_time' ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
         // #endregion
 
         $batch_size = 200;
@@ -2048,12 +2179,98 @@ class Seminargo_Hotel_Importer {
                 // Save progress after processing batch(es)
                 update_option( 'seminargo_batched_import_progress', $progress, false );
 
+                // #region agent log
+                $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+                @file_put_contents( $log_path, json_encode( [
+                    'sessionId' => 'debug-session',
+                    'runId' => 'run1',
+                    'hypothesisId' => 'H8',
+                    'location' => 'process_single_batch:phase2_scheduling',
+                    'message' => 'Scheduling next Phase 2 batch',
+                    'data' => [
+                        'offset' => $progress['offset'] ?? 0,
+                        'images_processed' => $progress['images_processed'] ?? 0,
+                        'disable_wp_cron' => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+                    ],
+                    'timestamp' => time() * 1000
+                ] ) . "\n", FILE_APPEND | LOCK_EX );
+                // #endregion
+
                 // Schedule next batch
-                wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
+                $scheduled = wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
+                
+                // #region agent log
+                @file_put_contents( $log_path, json_encode( [
+                    'sessionId' => 'debug-session',
+                    'runId' => 'run1',
+                    'hypothesisId' => 'H8',
+                    'location' => 'process_single_batch:phase2_scheduled',
+                    'message' => 'Next batch scheduled',
+                    'data' => [
+                        'scheduled' => $scheduled !== false,
+                        'scheduled_time' => time() + 1,
+                    ],
+                    'timestamp' => time() * 1000
+                ] ) . "\n", FILE_APPEND | LOCK_EX );
+                // #endregion
                 
                 // Force WP Cron to spawn on production (WP Cron may not fire reliably)
                 if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
-                    spawn_cron();
+                    // #region agent log
+                    @file_put_contents( $log_path, json_encode( [
+                        'sessionId' => 'debug-session',
+                        'runId' => 'run1',
+                        'hypothesisId' => 'H8',
+                        'location' => 'process_single_batch:phase2_spawn_cron',
+                        'message' => 'Calling spawn_cron for Phase 2',
+                        'data' => [ 'before_spawn' => true ],
+                        'timestamp' => time() * 1000
+                    ] ) . "\n", FILE_APPEND | LOCK_EX );
+                    // #endregion
+                    
+                    $spawn_result = spawn_cron();
+                    
+                    // #region agent log
+                    @file_put_contents( $log_path, json_encode( [
+                        'sessionId' => 'debug-session',
+                        'runId' => 'run1',
+                        'hypothesisId' => 'H8',
+                        'location' => 'process_single_batch:phase2_spawn_result',
+                        'message' => 'spawn_cron result for Phase 2',
+                        'data' => [
+                            'spawn_result' => $spawn_result,
+                            'after_spawn' => true,
+                        ],
+                        'timestamp' => time() * 1000
+                    ] ) . "\n", FILE_APPEND | LOCK_EX );
+                    // #endregion
+                    
+                    // FALLBACK: If spawn_cron fails or WP Cron is disabled, trigger via HTTP request
+                    // This is critical for WP Engine where WP Cron may not fire reliably
+                    if ( ! $spawn_result || defined( 'DISABLE_WP_CRON' ) ) {
+                        // #region agent log
+                        @file_put_contents( $log_path, json_encode( [
+                            'sessionId' => 'debug-session',
+                            'runId' => 'run1',
+                            'hypothesisId' => 'H8',
+                            'location' => 'process_single_batch:phase2_http_fallback',
+                            'message' => 'Using HTTP fallback to trigger next batch',
+                            'data' => [
+                                'site_url' => site_url(),
+                                'cron_url' => site_url( 'wp-cron.php?doing_wp_cron' ),
+                            ],
+                            'timestamp' => time() * 1000
+                        ] ) . "\n", FILE_APPEND | LOCK_EX );
+                        // #endregion
+                        
+                        // Trigger WP Cron via HTTP request (non-blocking)
+                        $cron_url = site_url( 'wp-cron.php?doing_wp_cron=' . time() );
+                        wp_remote_post( $cron_url, [
+                            'timeout' => 0.01,
+                            'blocking' => false,
+                            'sslverify' => false,
+                        ] );
+                    }
                 }
                 
                 // On WP Engine, avoid recursive calls - rely on WP Cron instead
