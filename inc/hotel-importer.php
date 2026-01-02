@@ -1809,14 +1809,31 @@ class Seminargo_Hotel_Importer {
      * Runs in background, no timeout issues
      */
     public function process_single_batch() {
+        // #region agent log
+        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:entry', 'message' => 'process_single_batch called', 'data' => [ 'memory_limit' => ini_get( 'memory_limit' ), 'max_execution_time' => ini_get( 'max_execution_time' ), 'memory_usage' => memory_get_usage( true ), 'peak_memory' => memory_get_peak_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        // #endregion
+        
         $progress = get_option( 'seminargo_batched_import_progress', null );
 
         if ( ! $progress || $progress['status'] !== 'running' ) {
+            // #region agent log
+            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:early_exit', 'message' => 'Early exit - not running', 'data' => [ 'progress' => $progress ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+            // #endregion
             return; // Not running or already complete
         }
 
+        // #region agent log
+        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:before_ini_set', 'message' => 'Before ini_set', 'data' => [ 'phase' => $progress['phase'] ?? 'unknown', 'offset' => $progress['offset'] ?? 0 ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        // #endregion
+
         @ini_set( 'memory_limit', '1024M' );
-        @ini_set( 'max_execution_time', 300 );
+        // WP Engine enforces 60-second max execution time (cannot be increased)
+        // Set to 50 seconds to leave buffer for scheduling next batch
+        @ini_set( 'max_execution_time', 50 );
+        
+        // #region agent log
+        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5', 'location' => 'process_single_batch:after_ini_set', 'message' => 'After ini_set', 'data' => [ 'memory_limit' => ini_get( 'memory_limit' ), 'max_execution_time' => ini_get( 'max_execution_time' ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        // #endregion
 
         $batch_size = 200;
 
@@ -1896,16 +1913,30 @@ class Seminargo_Hotel_Importer {
 
             // PHASE 2: DOWNLOAD IMAGES - Batched
             if ( $progress['phase'] === 'phase2' ) {
-                $batch_size = 50;
+                // #region agent log
+                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5,H7', 'location' => 'process_single_batch:phase2_entry', 'message' => 'Phase 2 started', 'data' => [ 'offset' => $progress['offset'] ?? 0, 'images_processed' => $progress['images_processed'] ?? 0, 'memory_usage' => memory_get_usage( true ), 'peak_memory' => memory_get_peak_usage( true ), 'start_time' => $progress['start_time'] ?? time(), 'elapsed' => time() - ( $progress['start_time'] ?? time() ), 'wp_engine_limit' => 60, 'current_execution_time' => time() - ( $_SERVER['REQUEST_TIME'] ?? time() ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                // #endregion
+                
+                // WP Engine enforces 60-second execution limit - use smaller batches
+                $batch_size = 10; // Reduced from 50 to process faster and avoid timeout
                 $offset = $progress['offset'];
-                $max_batches_in_request = 3; // Process up to 3 batches per request to avoid timeouts
+                $max_batches_in_request = 1; // Process only 1 batch per request on WP Engine to avoid timeout
                 $batches_processed = 0;
+                $request_start_time = time(); // Track when this request started
 
                 // Process multiple batches in same request if time allows (helps on production)
                 while ( $batches_processed < $max_batches_in_request ) {
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H3', 'location' => 'process_single_batch:phase2_fetch_start', 'message' => 'Fetching batch from API', 'data' => [ 'offset' => $offset, 'batch_size' => $batch_size, 'batches_processed' => $batches_processed ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
+                    
                     // Fetch batch from API (again, to get image data)
                     $batch_hotels = $this->fetch_hotels_batch_from_api( $offset, $batch_size );
                     $batch_count = count( $batch_hotels );
+                    
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H3', 'location' => 'process_single_batch:phase2_fetch_complete', 'message' => 'Batch fetched from API', 'data' => [ 'batch_count' => $batch_count, 'offset' => $offset ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
 
                     if ( $batch_count === 0 ) {
                         // Phase 2 complete - finalize
@@ -1925,12 +1956,26 @@ class Seminargo_Hotel_Importer {
                     }
 
                     // Process images for this batch
+                    $hotel_index = 0;
                     foreach ( $batch_hotels as $hotel ) {
+                        $hotel_index++;
+                        
+                        // #region agent log
+                        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H3,H4', 'location' => 'process_single_batch:phase2_hotel_start', 'message' => 'Processing hotel in Phase 2', 'data' => [ 'hotel_index' => $hotel_index, 'hotel_id' => $hotel->id ?? 'unknown', 'hotel_name' => $hotel->businessName ?? 'unknown', 'medias_count' => count( $hotel->medias ?? [] ), 'memory_usage' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                        // #endregion
+                        
                         if ( empty( $hotel->medias ) ) {
+                            // #region agent log
+                            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_single_batch:phase2_hotel_skip', 'message' => 'Hotel skipped - no medias', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown' ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                            // #endregion
                             continue;
                         }
 
                         try {
+                            // #region agent log
+                            $query_start = microtime( true );
+                            // #endregion
+                            
                             // Find WordPress post for this hotel
                             $args = [
                                 'post_type' => 'hotel',
@@ -1942,13 +1987,36 @@ class Seminargo_Hotel_Importer {
                                 'fields' => 'ids',
                             ];
                             $query = new WP_Query( $args );
+                            
+                            // #region agent log
+                            $query_time = ( microtime( true ) - $query_start ) * 1000;
+                            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H3', 'location' => 'process_single_batch:phase2_query_complete', 'message' => 'WP_Query completed', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown', 'query_time_ms' => round( $query_time, 2 ), 'found_posts' => $query->found_posts ?? 0, 'post_count' => $query->post_count ?? 0 ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                            // #endregion
 
                             if ( $query->have_posts() ) {
                                 $post_id = $query->posts[0];
+                                
+                                // #region agent log
+                                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H4', 'location' => 'process_single_batch:phase2_process_images_start', 'message' => 'Starting process_hotel_images', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'images_count' => count( $hotel->medias ?? [] ), 'memory_before' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                                // #endregion
+                                
                                 $this->process_hotel_images( $post_id, $hotel );
+                                
+                                // #region agent log
+                                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H4', 'location' => 'process_single_batch:phase2_process_images_complete', 'message' => 'Completed process_hotel_images', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'memory_after' => memory_get_usage( true ), 'peak_memory' => memory_get_peak_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                                // #endregion
+                                
                                 $progress['images_processed']++;
+                            } else {
+                                // #region agent log
+                                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H3,H4', 'location' => 'process_single_batch:phase2_hotel_not_found', 'message' => 'Hotel post not found in WordPress', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown' ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                                // #endregion
                             }
                         } catch ( Exception $e ) {
+                            // #region agent log
+                            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_single_batch:phase2_exception', 'message' => 'Exception in Phase 2 hotel processing', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown', 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString() ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                            // #endregion
+                            
                             $this->log( 'error', '❌ Image error: ' . $e->getMessage(), $hotel->businessName ?? '' );
                         }
                     }
@@ -1962,10 +2030,17 @@ class Seminargo_Hotel_Importer {
                     $this->log( 'info', "📊 Phase 2: Processed images for {$progress['images_processed']} hotels (batch {$batches_processed})" );
                     $this->flush_logs();
 
-                    // Check execution time - if we're running low, schedule next batch and exit
-                    $elapsed = time() - ( $progress['start_time'] ?? time() );
-                    if ( $elapsed > 240 ) { // Leave 60 seconds buffer out of 300 second limit
-                        $this->log( 'info', "⏱️ Approaching time limit, scheduling next batch..." );
+                    // Check execution time - WP Engine enforces 60-second limit
+                    $request_elapsed = time() - $request_start_time; // Time since this request started
+                    $total_elapsed = time() - ( $progress['start_time'] ?? time() ); // Total time since import started
+                    
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H7', 'location' => 'process_single_batch:phase2_time_check', 'message' => 'Checking execution time (WP Engine 60s limit)', 'data' => [ 'request_elapsed' => $request_elapsed, 'total_elapsed' => $total_elapsed, 'request_start_time' => $request_start_time, 'current_time' => time(), 'wp_engine_limit' => 60, 'threshold' => 45, 'will_break' => $request_elapsed > 45 ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
+                    
+                    // Exit at 45 seconds to leave buffer for scheduling next batch (WP Engine kills at 60s)
+                    if ( $request_elapsed > 45 ) {
+                        $this->log( 'info', "⏱️ Approaching WP Engine 60s limit ({$request_elapsed}s elapsed), scheduling next batch..." );
                         break;
                     }
                 }
@@ -1981,12 +2056,16 @@ class Seminargo_Hotel_Importer {
                     spawn_cron();
                 }
                 
-                // If we processed multiple batches, try to continue immediately if time allows
-                if ( $batches_processed > 1 && ( time() - ( $progress['start_time'] ?? time() ) ) < 240 ) {
-                    $this->log( 'info', "🔄 Continuing with next batch immediately..." );
-                    $this->flush_logs();
-                    $this->process_single_batch(); // Continue processing
-                }
+                // On WP Engine, avoid recursive calls - rely on WP Cron instead
+                // Recursive calls can cause issues with the 60-second limit
+                // #region agent log
+                $request_elapsed_final = time() - $request_start_time;
+                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H5,H7', 'location' => 'process_single_batch:phase2_no_recursive', 'message' => 'Skipping recursive call (WP Engine 60s limit)', 'data' => [ 'batches_processed' => $batches_processed, 'request_elapsed' => $request_elapsed_final, 'wp_engine_limit' => 60, 'will_use_cron' => true ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                // #endregion
+                
+                // #region agent log
+                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H3,H5,H7', 'location' => 'process_single_batch:phase2_exit', 'message' => 'Phase 2 batch complete, exiting', 'data' => [ 'batches_processed' => $batches_processed, 'images_processed' => $progress['images_processed'] ?? 0, 'offset' => $progress['offset'] ?? 0, 'memory_usage' => memory_get_usage( true ), 'peak_memory' => memory_get_peak_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                // #endregion
                 
                 return;
             }
@@ -2941,7 +3020,14 @@ class Seminargo_Hotel_Importer {
      * Process hotel images
      */
     private function process_hotel_images( $post_id, $hotel ) {
+        // #region agent log
+        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H4,H6', 'location' => 'process_hotel_images:entry', 'message' => 'process_hotel_images started', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'medias_count' => count( $hotel->medias ?? [] ), 'memory_before' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        // #endregion
+        
         if ( empty( $hotel->medias ) ) {
+            // #region agent log
+            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_hotel_images:early_exit', 'message' => 'Early exit - no medias', 'data' => [ 'post_id' => $post_id ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+            // #endregion
             return;
         }
 
@@ -2955,11 +3041,21 @@ class Seminargo_Hotel_Importer {
 
         $first_image = true;
         $gallery_ids = [];
+        $image_index = 0;
 
         foreach ( $hotel->medias as $media ) {
+            $image_index++;
+            
+            // #region agent log
+            file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H4,H6', 'location' => 'process_hotel_images:image_start', 'message' => 'Processing image', 'data' => [ 'post_id' => $post_id, 'image_index' => $image_index, 'total_images' => $total_images, 'memory_before' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+            // #endregion
+            
             try {
                 $image_url = $media->previewUrl ?? $media->url;
                 if ( empty( $image_url ) ) {
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_hotel_images:image_skip_empty', 'message' => 'Image skipped - empty URL', 'data' => [ 'image_index' => $image_index ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
                     continue;
                 }
 
@@ -2984,7 +3080,15 @@ class Seminargo_Hotel_Importer {
                 if ( ! empty( $existing ) ) {
                     $attachment_id = $existing[0]->ID;
                     $skipped++;
+                    
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_hotel_images:image_skip_exists', 'message' => 'Image skipped - already exists', 'data' => [ 'image_index' => $image_index, 'attachment_id' => $attachment_id ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
                 } else {
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H6', 'location' => 'process_hotel_images:download_start', 'message' => 'Starting image download', 'data' => [ 'image_index' => $image_index, 'original_url' => $original_url, 'encoded_url' => $image_url, 'urls_to_try' => count( $original_url !== $image_url ? [ $image_url, $original_url ] : [ $image_url ] ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
+                    
                     // Download image to temp file with retry logic
                     $tmp = false;
                     $download_urls = [ $image_url ]; // Try encoded URL first
@@ -2995,8 +3099,21 @@ class Seminargo_Hotel_Importer {
                     }
 
                     $last_error = null;
+                    $download_attempt = 0;
                     foreach ( $download_urls as $try_url ) {
+                        $download_attempt++;
+                        
+                        // #region agent log
+                        $download_start = microtime( true );
+                        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1', 'location' => 'process_hotel_images:download_url_call', 'message' => 'Calling download_url', 'data' => [ 'image_index' => $image_index, 'attempt' => $download_attempt, 'url' => $try_url, 'memory_before' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                        // #endregion
+                        
                         $tmp = download_url( $try_url );
+                        
+                        // #region agent log
+                        $download_time = ( microtime( true ) - $download_start ) * 1000;
+                        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H6', 'location' => 'process_hotel_images:download_url_result', 'message' => 'download_url result', 'data' => [ 'image_index' => $image_index, 'attempt' => $download_attempt, 'url' => $try_url, 'download_time_ms' => round( $download_time, 2 ), 'is_wp_error' => is_wp_error( $tmp ), 'error_message' => is_wp_error( $tmp ) ? $tmp->get_error_message() : null, 'error_code' => is_wp_error( $tmp ) ? $tmp->get_error_code() : null, 'tmp_file' => ( $tmp && ! is_wp_error( $tmp ) ) ? $tmp : null, 'memory_after' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                        // #endregion
                         
                         if ( ! is_wp_error( $tmp ) ) {
                             // Success - update image_url to the one that worked
@@ -3010,6 +3127,11 @@ class Seminargo_Hotel_Importer {
 
                     if ( is_wp_error( $tmp ) || $tmp === false ) {
                         $error_msg = $last_error instanceof WP_Error ? $last_error->get_error_message() : ( $tmp instanceof WP_Error ? $tmp->get_error_message() : 'Unknown error' );
+                        
+                        // #region agent log
+                        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H4,H6', 'location' => 'process_hotel_images:download_failed', 'message' => 'Image download failed', 'data' => [ 'image_index' => $image_index, 'url' => $image_url, 'error' => $error_msg, 'error_code' => $last_error instanceof WP_Error ? $last_error->get_error_code() : null ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                        // #endregion
+                        
                         $this->log( 'error', 'Failed to download image: ' . $image_url . ' (Error: ' . $error_msg . ')', $hotel->businessName );
                         continue;
                     }
@@ -3060,12 +3182,24 @@ class Seminargo_Hotel_Importer {
                     $filename = wp_unique_filename( $upload_dir['path'], $image_name );
                     $filepath = $upload_dir['path'] . '/' . $filename;
 
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H6', 'location' => 'process_hotel_images:file_move_start', 'message' => 'Moving file to uploads', 'data' => [ 'image_index' => $image_index, 'tmp_file' => $tmp, 'filepath' => $filepath, 'upload_dir_writable' => is_writable( $upload_dir['path'] ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
+
                     // Move temp file to uploads directory
                     if ( ! rename( $tmp, $filepath ) ) {
+                        // #region agent log
+                        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H6', 'location' => 'process_hotel_images:file_move_failed', 'message' => 'Failed to move file', 'data' => [ 'image_index' => $image_index, 'tmp_file' => $tmp, 'filepath' => $filepath, 'error' => error_get_last() ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                        // #endregion
+                        
                         @unlink( $tmp );
                         $this->log( 'error', 'Failed to move image file', $hotel->businessName );
                         continue;
                     }
+                    
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H2,H6', 'location' => 'process_hotel_images:attachment_create_start', 'message' => 'Creating attachment', 'data' => [ 'image_index' => $image_index, 'filepath' => $filepath, 'mime_type' => $filetype['type'], 'memory_before' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
 
                     // Create attachment directly (bypasses upload security)
                     $attachment_id = wp_insert_attachment( [
@@ -3074,6 +3208,10 @@ class Seminargo_Hotel_Importer {
                         'post_title'     => sanitize_file_name( pathinfo( $filename, PATHINFO_FILENAME ) ),
                         'post_status'    => 'inherit',
                     ], $filepath, $post_id );
+
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H2,H4,H6', 'location' => 'process_hotel_images:attachment_create_result', 'message' => 'Attachment creation result', 'data' => [ 'image_index' => $image_index, 'attachment_id' => is_wp_error( $attachment_id ) ? null : $attachment_id, 'is_wp_error' => is_wp_error( $attachment_id ), 'error' => is_wp_error( $attachment_id ) ? $attachment_id->get_error_message() : null, 'memory_after' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
 
                     if ( is_wp_error( $attachment_id ) ) {
                         @unlink( $filepath );
@@ -3094,11 +3232,23 @@ class Seminargo_Hotel_Importer {
 
                 // Set first image as featured
                 if ( $first_image ) {
+                    // #region agent log
+                    file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H2,H6', 'location' => 'process_hotel_images:set_thumbnail', 'message' => 'Setting featured image', 'data' => [ 'image_index' => $image_index, 'post_id' => $post_id, 'attachment_id' => $attachment_id ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                    // #endregion
+                    
                     set_post_thumbnail( $post_id, $attachment_id );
                     $first_image = false;
                 }
+                
+                // #region agent log
+                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H4', 'location' => 'process_hotel_images:image_complete', 'message' => 'Image processing complete', 'data' => [ 'image_index' => $image_index, 'total_images' => $total_images, 'downloaded' => $downloaded, 'skipped' => $skipped, 'memory_usage' => memory_get_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                // #endregion
 
             } catch ( Exception $e ) {
+                // #region agent log
+                file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_hotel_images:image_exception', 'message' => 'Exception processing image', 'data' => [ 'image_index' => $image_index, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString() ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+                // #endregion
+                
                 $this->log( 'error', 'Image processing error: ' . $e->getMessage(), $hotel->businessName );
             }
         }
@@ -3117,6 +3267,10 @@ class Seminargo_Hotel_Importer {
                 $this->log( 'info', "✓ {$hotel->businessName}: All {$skipped} images already exist, skipped download", $hotel->businessName );
             }
         }
+        
+        // #region agent log
+        file_put_contents( '/Users/gregorwallner/Local Sites/seminargo/app/public/wp-content/themes/seminargo/.cursor/debug.log', json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H4,H6', 'location' => 'process_hotel_images:exit', 'message' => 'process_hotel_images completed', 'data' => [ 'post_id' => $post_id, 'total_images' => $total_images, 'downloaded' => $downloaded, 'skipped' => $skipped, 'gallery_ids_count' => count( $gallery_ids ), 'memory_usage' => memory_get_usage( true ), 'peak_memory' => memory_get_peak_usage( true ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND );
+        // #endregion
     }
 
     /**

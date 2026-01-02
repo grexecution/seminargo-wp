@@ -251,14 +251,21 @@ get_header(); ?>
 
                     if ( $featured_hotels->have_posts() ) :
                         while ( $featured_hotels->have_posts() ) : $featured_hotels->the_post();
-                            // Get hotel image
+                            // Get hotel image - same fallback pattern as single/archive pages
                             $hotel_image = get_the_post_thumbnail_url( get_the_ID(), 'large' );
                             if ( ! $hotel_image ) {
+                                // First try WordPress gallery (downloaded images)
                                 $gallery = get_post_meta( get_the_ID(), 'gallery', true );
                                 if ( is_array( $gallery ) && ! empty( $gallery ) ) {
                                     $hotel_image = $gallery[0];
                                 } else {
-                                    $hotel_image = 'https://images.seminargo.pro/hotel-83421-4-400x300-FIT_AND_TRIM-f09c5c96e1bc6e5e8f88c37c951bbaa2.webp';
+                                    // Fallback to external API image URLs
+                                    $medias = json_decode( get_post_meta( get_the_ID(), 'medias_json', true ), true );
+                                    if ( ! empty( $medias[0]['previewUrl'] ) ) {
+                                        $hotel_image = $medias[0]['previewUrl'];
+                                    } else {
+                                        $hotel_image = 'https://images.seminargo.pro/hotel-83421-4-400x300-FIT_AND_TRIM-f09c5c96e1bc6e5e8f88c37c951bbaa2.webp';
+                                    }
                                 }
                             }
 
