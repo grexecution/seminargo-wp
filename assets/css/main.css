@@ -1354,7 +1354,7 @@ body.slide-menu-open {
     bottom: 60px;
     left: 60px;
     color: white;
-    max-width: 600px;
+    max-width: 800px;
     animation: fadeInUp 0.8s ease-out;
 }
 
