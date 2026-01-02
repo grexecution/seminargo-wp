@@ -77,6 +77,91 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
+     * Bypass WordPress file type validation for image imports
+     */
+    public function bypass_filetype_check( $data, $file, $filename, $mimes ) {
+        // Always check if it's an image file by content first (most reliable)
+        if ( file_exists( $file ) && function_exists( 'finfo_open' ) ) {
+            $finfo = finfo_open( FILEINFO_MIME_TYPE );
+            $mime = finfo_file( $finfo, $file );
+            finfo_close( $finfo );
+
+            $mime_to_ext = [
+                'image/jpeg' => 'jpg',
+                'image/png'  => 'png',
+                'image/gif'  => 'gif',
+                'image/webp' => 'webp',
+                'image/svg+xml' => 'svg',
+                'image/bmp' => 'bmp',
+                'image/tiff' => 'tiff',
+            ];
+
+            if ( isset( $mime_to_ext[ $mime ] ) ) {
+                // Force override - we detected it's an image, so allow it
+                $data['ext'] = $mime_to_ext[ $mime ];
+                $data['type'] = $mime;
+                $data['proper_filename'] = false;
+                return $data;
+            }
+        }
+
+        // If we already have a valid type, return it
+        if ( ! empty( $data['type'] ) && ! empty( $data['ext'] ) ) {
+            return $data;
+        }
+
+        // Only bypass during hotel import if we couldn't detect MIME type
+        // This is a fallback for edge cases
+        if ( $this->is_importing_images() ) {
+            // If we're importing and can't detect, assume it's valid
+            // WordPress will still validate the actual file content
+            return $data;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Allow all image MIME types during import
+     */
+    public function allow_all_image_mimes( $mimes ) {
+        // Only modify during hotel import
+        if ( ! $this->is_importing_images() ) {
+            return $mimes;
+        }
+
+        // Ensure all common image formats are allowed
+        $mimes['jpg|jpeg|jpe'] = 'image/jpeg';
+        $mimes['gif'] = 'image/gif';
+        $mimes['png'] = 'image/png';
+        $mimes['webp'] = 'image/webp';
+        $mimes['svg'] = 'image/svg+xml';
+        $mimes['bmp'] = 'image/bmp';
+        $mimes['tiff|tif'] = 'image/tiff';
+
+        return $mimes;
+    }
+
+    /**
+     * Check if we're currently importing images
+     * Uses a static flag to avoid repeated option reads
+     */
+    private static $importing_images_flag = null;
+    
+    private function is_importing_images() {
+        // Use static flag to cache the result during a single request
+        if ( self::$importing_images_flag !== null ) {
+            return self::$importing_images_flag;
+        }
+        
+        // Check if we're in Phase 2 (image import phase)
+        $progress = get_option( $this->auto_import_progress_option, [] );
+        self::$importing_images_flag = isset( $progress['phase'] ) && $progress['phase'] === 'phase2';
+        
+        return self::$importing_images_flag;
+    }
+
+    /**
      * Add column styles
      */
     public function hotel_column_styles() {
@@ -3633,25 +3718,76 @@ class Seminargo_Hotel_Importer {
                 
                 // Move file and create attachment - with error handling
                 try {
-                    $filetype = wp_check_filetype_and_ext( $tmp, basename( $image_url ) );
-                    if ( ! $filetype['type'] && function_exists( 'finfo_open' ) ) {
+                    // Add filters to bypass WordPress file type validation
+                    add_filter( 'upload_mimes', [ $this, 'allow_all_image_mimes' ], 999 );
+                    add_filter( 'wp_check_filetype_and_ext', [ $this, 'bypass_filetype_check' ], 999, 4 );
+
+                    // Detect file type from file content FIRST (most reliable)
+                    $filetype = [ 'ext' => '', 'type' => '' ];
+                    if ( function_exists( 'finfo_open' ) ) {
                         $finfo = finfo_open( FILEINFO_MIME_TYPE );
                         $mime = finfo_file( $finfo, $tmp );
                         finfo_close( $finfo );
-                        $mime_to_ext = [ 'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp' ];
+                        
+                        $mime_to_ext = [ 
+                            'image/jpeg' => 'jpg', 
+                            'image/png' => 'png', 
+                            'image/gif' => 'gif', 
+                            'image/webp' => 'webp',
+                            'image/svg+xml' => 'svg',
+                            'image/bmp' => 'bmp',
+                            'image/tiff' => 'tiff',
+                        ];
+                        
                         if ( isset( $mime_to_ext[ $mime ] ) ) {
                             $filetype['ext'] = $mime_to_ext[ $mime ];
                             $filetype['type'] = $mime;
                         }
                     }
                     
+                    // Fallback to WordPress detection if finfo failed
+                    if ( empty( $filetype['type'] ) ) {
+                        $wp_filetype = wp_check_filetype_and_ext( $tmp, basename( $image_url ) );
+                        if ( ! empty( $wp_filetype['type'] ) && ! empty( $wp_filetype['ext'] ) ) {
+                            $filetype = $wp_filetype;
+                        }
+                    }
+
+                    // Ensure we have a valid file type - log if we can't detect
+                    if ( empty( $filetype['type'] ) || empty( $filetype['ext'] ) ) {
+                        // Log the issue for debugging
+                        $this->log( 'error', "⚠️ Image {$image_index} MIME detection failed - URL: " . substr( $image_url, 0, 100 ), $hotel->businessName ?? '' );
+                        // Fallback: assume JPEG if we can't detect
+                        $filetype['ext'] = 'jpg';
+                        $filetype['type'] = 'image/jpeg';
+                    }
+                    
+                    // Get base filename and ensure it has the correct extension
                     $image_name = basename( $media->url ?? $media->path );
-                    $upload = wp_upload_bits( $image_name, null, file_get_contents( $tmp ) );
+                    $image_name = sanitize_file_name( $image_name );
+                    
+                    // Remove any existing extension
+                    $image_name = preg_replace( '/\.[^.]+$/', '', $image_name );
+                    // Add the correct extension based on detected MIME type
+                    $image_name .= '.' . $filetype['ext'];
+                    
+                    // Log before upload for debugging
+                    $file_size = filesize( $tmp );
+                    $this->log( 'info', "📤 Uploading image {$image_index}: {$image_name} ({$filetype['type']}, {$file_size} bytes)", $hotel->businessName ?? '' );
+                    
+                    $file_contents = file_get_contents( $tmp );
+                    $upload = wp_upload_bits( $image_name, null, $file_contents );
                     @unlink( $tmp );
+                    
+                    // Remove filters after upload
+                    remove_filter( 'upload_mimes', [ $this, 'allow_all_image_mimes' ], 999 );
+                    remove_filter( 'wp_check_filetype_and_ext', [ $this, 'bypass_filetype_check' ], 999 );
                     
                     if ( $upload['error'] ) {
                         $error_message = 'Upload error: ' . $upload['error'];
+                        // Enhanced error logging
                         $this->log( 'error', "⚠️ Image {$image_index} upload failed: {$error_message}", $hotel->businessName ?? '' );
+                        $this->log( 'error', "   Filename: {$image_name}, MIME: {$filetype['type']}, Size: {$file_size}, URL: " . substr( $image_url, 0, 100 ), $hotel->businessName ?? '' );
                         return [ 'completed' => false, 'next_index' => $image_index + 1, 'downloaded' => 0, 'skipped' => 0, 'error' => $error_message ];
                     }
                     
@@ -3678,6 +3814,10 @@ class Seminargo_Hotel_Importer {
                     $downloaded = 1;
                     
                 } catch ( Exception $e ) {
+                    // Remove filters on error
+                    remove_filter( 'upload_mimes', [ $this, 'allow_all_image_mimes' ], 999 );
+                    remove_filter( 'wp_check_filetype_and_ext', [ $this, 'bypass_filetype_check' ], 999 );
+                    
                     $error_message = 'File processing error: ' . $e->getMessage();
                     if ( $tmp && file_exists( $tmp ) ) {
                         @unlink( $tmp );
