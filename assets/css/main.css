@@ -1364,6 +1364,7 @@ body.slide-menu-open {
     margin-bottom: 0.5rem;
     color: white;
     line-height: 1.1;
+    white-space: nowrap; /* Keep text on one line on desktop */
 }
 
 .hero-cta-subtitle {
@@ -1625,6 +1626,7 @@ a.btn-inspirier:hover {
 
     .hero-cta-title {
         font-size: 2rem;
+        white-space: normal; /* Allow wrapping on tablets and smaller */
     }
 
     .hero-cta-subtitle {
@@ -1647,6 +1649,7 @@ a.btn-inspirier:hover {
 @media (max-width: 480px) {
     .hero-cta-title {
         font-size: 1.5rem;
+        white-space: normal; /* Allow wrapping on mobile */
     }
 
     .hero-cta-subtitle {

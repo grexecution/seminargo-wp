@@ -32,12 +32,26 @@ get_header(); ?>
             </div>
 
             <!-- Hero Background Image with CTA -->
+            <?php
+            // Get hero CTA text from page meta (with fallback to defaults)
+            $page_id = get_the_ID();
+            $hero_cta_title = get_post_meta( $page_id, 'hero_cta_title', true );
+            $hero_cta_subtitle = get_post_meta( $page_id, 'hero_cta_subtitle', true );
+            
+            // Fallback to defaults if not set
+            if ( empty( $hero_cta_title ) ) {
+                $hero_cta_title = 'Kreativer Workshop im Grünen?';
+            }
+            if ( empty( $hero_cta_subtitle ) ) {
+                $hero_cta_subtitle = 'Finden Sie Ihre perfekte Veranstaltungsumgebung.';
+            }
+            ?>
             <a href="#" class="hero-image-section" style="background-image: url('https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&h=600&fit=crop');">
                 <div class="hero-image-wrapper">
                     <div class="hero-overlay"></div>
                     <div class="hero-cta-content">
-                        <h2 class="hero-cta-title">Kreativer Workshop im Grünen?</h2>
-                        <p class="hero-cta-subtitle">Finden Sie Ihre perfekte Veranstaltungsumgebung.</p>
+                        <h2 class="hero-cta-title"><?php echo esc_html( $hero_cta_title ); ?></h2>
+                        <p class="hero-cta-subtitle"><?php echo esc_html( $hero_cta_subtitle ); ?></p>
                         <span class="btn-inspirier">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="5" y1="12" x2="19" y2="12"></line>

@@ -803,8 +803,11 @@ add_action( 'add_meta_boxes', 'seminargo_add_homepage_meta_box' );
  * Meta box callback function
  */
 function seminargo_homepage_collections_meta_box_callback( $post ) {
-    // Only show on front page
-    if ( get_option( 'page_on_front' ) != $post->ID && ! is_front_page() ) {
+    // Only show on front page (check if this page is set as front page)
+    $front_page_id = get_option( 'page_on_front' );
+    if ( $front_page_id && $front_page_id != $post->ID ) {
+        // If a front page is set and this isn't it, don't show the meta box
+        echo '<p style="padding: 15px; color: #666;">Diese Einstellungen sind nur für die Startseite verfügbar. Diese Seite ist nicht als Startseite gesetzt.</p>';
         return;
     }
 
@@ -824,6 +827,10 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
     $show_top_tab = get_post_meta( $post->ID, 'show_top_hotels_tab', true ) !== '0';
     $show_theme_tab = get_post_meta( $post->ID, 'show_theme_filter_tab', true ) !== '0';
     $show_location_tab = get_post_meta( $post->ID, 'show_location_filter_tab', true ) !== '0';
+
+    // Get hero CTA text settings
+    $hero_cta_title = get_post_meta( $post->ID, 'hero_cta_title', true );
+    $hero_cta_subtitle = get_post_meta( $post->ID, 'hero_cta_subtitle', true );
 
     // Convert to arrays
     $selected_event_types = ! empty( $event_type_collections ) ? array_map( 'intval', explode( ',', $event_type_collections ) ) : array();
@@ -1008,6 +1015,42 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                 flex: 1;
             }
         </style>
+
+        <!-- Hero CTA Text Settings -->
+        <div class="visibility-settings" style="background: #fff5f7; border-color: #AC2A6E;">
+            <h3>✏️ Hero CTA Text (Bildabschnitt)</h3>
+            <p style="font-size: 12px; color: #666; margin: 0 0 15px 0;">Bearbeiten Sie den Text, der auf dem großen Hintergrundbild angezeigt wird.</p>
+            
+            <div style="margin-bottom: 15px;">
+                <label for="hero_cta_title" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                    Titel:
+                </label>
+                <input type="text"
+                       id="hero_cta_title"
+                       name="hero_cta_title"
+                       value="<?php echo esc_attr( $hero_cta_title ?: 'Kreativer Workshop im Grünen?' ); ?>"
+                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                       placeholder="z.B. Kreativer Workshop im Grünen?">
+                <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                    Dieser Text wird als Überschrift auf dem Hero-Bild angezeigt.
+                </p>
+            </div>
+
+            <div>
+                <label for="hero_cta_subtitle" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                    Untertitel:
+                </label>
+                <input type="text"
+                       id="hero_cta_subtitle"
+                       name="hero_cta_subtitle"
+                       value="<?php echo esc_attr( $hero_cta_subtitle ?: 'Finden Sie Ihre perfekte Veranstaltungsumgebung.' ); ?>"
+                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                       placeholder="z.B. Finden Sie Ihre perfekte Veranstaltungsumgebung.">
+                <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                    Dieser Text wird unterhalb des Titels angezeigt.
+                </p>
+            </div>
+        </div>
 
         <!-- Visibility Settings -->
         <div class="visibility-settings">
@@ -1294,5 +1337,13 @@ function seminargo_save_homepage_collections_meta( $post_id ) {
     update_post_meta( $post_id, 'show_top_hotels_tab', isset( $_POST['show_top_hotels_tab'] ) ? '1' : '0' );
     update_post_meta( $post_id, 'show_theme_filter_tab', isset( $_POST['show_theme_filter_tab'] ) ? '1' : '0' );
     update_post_meta( $post_id, 'show_location_filter_tab', isset( $_POST['show_location_filter_tab'] ) ? '1' : '0' );
+
+    // Save hero CTA text settings
+    if ( isset( $_POST['hero_cta_title'] ) ) {
+        update_post_meta( $post_id, 'hero_cta_title', sanitize_text_field( $_POST['hero_cta_title'] ) );
+    }
+    if ( isset( $_POST['hero_cta_subtitle'] ) ) {
+        update_post_meta( $post_id, 'hero_cta_subtitle', sanitize_text_field( $_POST['hero_cta_subtitle'] ) );
+    }
 }
 add_action( 'save_post', 'seminargo_save_homepage_collections_meta' );
