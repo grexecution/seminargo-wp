@@ -32,6 +32,7 @@ class Seminargo_Hotel_Importer {
         // AJAX handlers
         add_action( 'wp_ajax_seminargo_fetch_hotels', [ $this, 'ajax_fetch_hotels' ] );
         add_action( 'wp_ajax_seminargo_start_batched_import', [ $this, 'ajax_start_batched_import' ] );
+        add_action( 'wp_ajax_seminargo_skip_to_phase2', [ $this, 'ajax_skip_to_phase2' ] );
         add_action( 'wp_ajax_seminargo_get_import_progress', [ $this, 'ajax_get_import_progress' ] );
         add_action( 'wp_ajax_seminargo_get_logs', [ $this, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_seminargo_clear_logs', [ $this, 'ajax_clear_logs' ] );
@@ -861,11 +862,11 @@ class Seminargo_Hotel_Importer {
                     <table class="widefat" style="margin-top: 15px;">
                         <tr>
                             <td><strong><?php esc_html_e( 'Last Import:', 'seminargo' ); ?></strong></td>
-                            <td><?php echo ! empty( $last_import['time'] ) ? esc_html( date( 'Y-m-d H:i:s', $last_import['time'] ) ) : esc_html__( 'Never', 'seminargo' ); ?></td>
+                            <td><?php echo ! empty( $last_import['time'] ) ? esc_html( date_i18n( 'Y-m-d H:i:s', $last_import['time'] ) ) : esc_html__( 'Never', 'seminargo' ); ?></td>
                         </tr>
                         <tr>
                             <td><strong><?php esc_html_e( 'Next Scheduled:', 'seminargo' ); ?></strong></td>
-                            <td><?php echo $next_scheduled ? esc_html( date( 'Y-m-d H:i:s', $next_scheduled ) ) : esc_html__( 'Not scheduled', 'seminargo' ); ?></td>
+                            <td><?php echo $next_scheduled ? esc_html( date_i18n( 'Y-m-d H:i:s', $next_scheduled ) ) : esc_html__( 'Not scheduled', 'seminargo' ); ?></td>
                         </tr>
                         <tr>
                             <td><strong><?php esc_html_e( 'Hotels Created:', 'seminargo' ); ?></strong></td>
@@ -888,6 +889,9 @@ class Seminargo_Hotel_Importer {
                     <div style="margin-top: 20px;">
                         <button id="btn-fetch-now" class="button button-primary button-hero">
                             🔄 <?php esc_html_e( 'Fetch Now', 'seminargo' ); ?>
+                        </button>
+                        <button id="btn-skip-to-phase2" class="button" style="margin-left: 10px; background: #f59e0b; color: white; border-color: #f59e0b;" title="Debug: Skip Phase 1 and start directly with Phase 2 (image downloads)">
+                            📸 <?php esc_html_e( 'Skip to Phase 2 (Debug)', 'seminargo' ); ?>
                         </button>
                         <button id="btn-clear-logs" class="button" style="margin-left: 10px;">
                             🗑️ <?php esc_html_e( 'Clear Logs', 'seminargo' ); ?>
@@ -1053,6 +1057,13 @@ class Seminargo_Hotel_Importer {
 
         <script>
         jQuery(document).ready(function($) {
+            // Debug: Verify button exists and attach handler
+            var $skipBtn = $('#btn-skip-to-phase2');
+            if ($skipBtn.length === 0) {
+                console.error('Skip to Phase 2 button not found!');
+            } else {
+                console.log('Skip to Phase 2 button found, ID:', $skipBtn.attr('id'));
+            }
 
             function loadLogs() {
                 $.post(ajaxurl, { action: 'seminargo_get_logs' }, function(response) {
@@ -1244,6 +1255,101 @@ class Seminargo_Hotel_Importer {
                 }
             }
 
+            $('#btn-skip-to-phase2').on('click', function(e) {
+                e.preventDefault();
+                console.log('Skip to Phase 2 button clicked');
+                
+                if (!confirm('⚠️ Skip to Phase 2?\n\nThis will skip Phase 1 (hotel creation) and start directly with Phase 2 (image downloads).\n\nUse this for debugging image download issues only.\n\nContinue?')) {
+                    return;
+                }
+
+                var btn = $(this);
+                console.log('Starting Phase 2...');
+                btn.prop('disabled', true).text('⏳ <?php echo esc_js( __( 'Starting Phase 2...', 'seminargo' ) ); ?>');
+
+                // Reset progress tracking
+                importStartTime = Date.now();
+                lastProcessedCount = 0;
+                totalHotels = 0;
+
+                // Reset UI
+                $('#import-progress').show();
+                $('#phase-icon').text('📸');
+                $('#phase-name').text('Phase 2: Downloading Images (Debug Mode)');
+                $('#current-action').text('Starting Phase 2 directly (skipped Phase 1)...');
+                $('#progress-bar').css('width', '50%').css('background', 'linear-gradient(90deg, #AC2A6E, #d64a94)').text('50%');
+                $('#overall-percent').text('50%');
+                $('#hotels-processed, #hotels-total, #live-created, #live-updated').text('0');
+                $('#images-processed').text('0');
+                $('#time-elapsed').text('0s');
+                $('#time-remaining').text('Calculating...');
+
+                // Skip to Phase 2
+                $.post(ajaxurl, { action: 'seminargo_skip_to_phase2' }, function(response) {
+                    if (!response.success) {
+                        $('#phase-icon').text('❌');
+                        $('#phase-name').text('Failed to Start Phase 2');
+                        $('#current-action').text('Error: ' + (response.data || 'Unknown error'));
+                        btn.prop('disabled', false).text('📸 <?php echo esc_js( __( 'Skip to Phase 2 (Debug)', 'seminargo' ) ); ?>');
+                        console.error('Skip to Phase 2 failed:', response);
+                        return;
+                    }
+
+                    console.log('Phase 2 started successfully:', response);
+                    $('#current-action').text('Phase 2 running in background batches...');
+
+                    // Poll for progress every 2 seconds
+                    var progressInterval = setInterval(function() {
+                        $.post(ajaxurl, { action: 'seminargo_get_import_progress' }, function(resp) {
+                            if (!resp.success) return;
+
+                            var prog = resp.data.progress;
+                            var logs = resp.data.logs;
+
+                            // Update logs
+                            if (logs) {
+                                renderLogs(logs);
+                                updateProgressUI(logs);
+                            }
+
+                            // Update progress from background process
+                            if (prog) {
+                                $('#hotels-total').text(prog.total_hotels || 0);
+                                $('#hotels-processed').text(prog.hotels_processed || 0);
+                                $('#live-created').text(prog.created || 0);
+                                $('#live-updated').text(prog.updated || 0);
+                                $('#images-processed').text(prog.images_processed || 0);
+
+                                // Calculate overall progress (Phase 2 is 50-95%)
+                                if (prog.total_hotels > 0 && prog.phase === 'phase2') {
+                                    var phase2Percent = (prog.images_processed / prog.total_hotels) * 100;
+                                    var overallPercent = 50 + (phase2Percent * 0.45); // 50-95% range
+                                    $('#progress-bar').css('width', overallPercent + '%').text(Math.round(overallPercent) + '%');
+                                    $('#overall-percent').text(Math.round(overallPercent) + '%');
+                                }
+
+                                // Check if complete
+                                if (prog.status === 'complete' || prog.phase === 'done') {
+                                    clearInterval(progressInterval);
+                                    $('#phase-icon').text('✅');
+                                    $('#phase-name').text('Import Complete');
+                                    $('#current-action').text('All images processed!');
+                                    $('#progress-bar').css('width', '100%').text('100%');
+                                    $('#overall-percent').text('100%');
+                                    btn.prop('disabled', false).text('📸 <?php echo esc_js( __( 'Skip to Phase 2 (Debug)', 'seminargo' ) ); ?>');
+                                }
+                            }
+                        });
+                    }, 2000);
+                }).fail(function(xhr, status, error) {
+                    console.error('AJAX error:', status, error, xhr);
+                    $('#phase-icon').text('❌');
+                    $('#phase-name').text('Failed to Start Phase 2');
+                    $('#current-action').text('AJAX Error: ' + error);
+                    btn.prop('disabled', false).text('📸 <?php echo esc_js( __( 'Skip to Phase 2 (Debug)', 'seminargo' ) ); ?>');
+                });
+            });
+
             $('#btn-fetch-now').on('click', function() {
                 var btn = $(this);
                 btn.prop('disabled', true).text('⏳ <?php echo esc_js( __( 'Importing...', 'seminargo' ) ); ?>');
@@ -1428,9 +1534,8 @@ class Seminargo_Hotel_Importer {
                             statusHTML += '<tr><td><strong>Next Run:</strong></td><td>' + data.next_run_formatted + '</td></tr>';
                         }
 
-                        if (progress.last_run > 0) {
-                            const lastRun = new Date(progress.last_run * 1000);
-                            statusHTML += '<tr><td><strong>Last Run:</strong></td><td>' + lastRun.toLocaleString() + '</td></tr>';
+                        if (data.last_run_formatted) {
+                            statusHTML += '<tr><td><strong>Last Run:</strong></td><td>' + data.last_run_formatted + '</td></tr>';
                         }
 
                         statusHTML += '</table>';
@@ -1477,6 +1582,21 @@ class Seminargo_Hotel_Importer {
 
             // Refresh auto-import status every 30 seconds
             setInterval(loadAutoImportStatus, 30000);
+            
+            // Debug: Test skip button after a short delay
+            setTimeout(function() {
+                var $btn = $('#btn-skip-to-phase2');
+                if ($btn.length > 0) {
+                    console.log('✅ Skip to Phase 2 button found and ready');
+                    // Test if click handler is attached
+                    $btn.on('test', function() {
+                        console.log('✅ Click handler is attached');
+                    });
+                    $btn.trigger('test');
+                } else {
+                    console.error('❌ Skip to Phase 2 button NOT FOUND in DOM');
+                }
+            }, 1000);
         });
         </script>
         <?php
@@ -1610,9 +1730,63 @@ class Seminargo_Hotel_Importer {
 
         // Schedule immediate first batch to fetch hotels
         wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+        
+        // Force WP Cron to spawn immediately (WP Cron may not fire reliably on production)
+        if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+            spawn_cron();
+        }
 
         wp_send_json_success([
             'message' => 'Batched import started in background',
+            'progress' => $progress,
+        ]);
+    }
+
+    /**
+     * AJAX handler to skip to Phase 2 (debugging feature)
+     */
+    public function ajax_skip_to_phase2() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        // Get total hotel count for progress tracking
+        $total_hotels = wp_count_posts( 'hotel' )->publish + wp_count_posts( 'hotel' )->draft;
+
+        // Initialize progress tracking for Phase 2 only
+        $progress = [
+            'status' => 'running',
+            'phase' => 'phase2', // Start directly in Phase 2
+            'offset' => 0,
+            'total_hotels' => $total_hotels,
+            'hotels_processed' => $total_hotels, // Pretend Phase 1 is done
+            'images_processed' => 0,
+            'created' => 0,
+            'updated' => 0,
+            'drafted' => 0,
+            'errors' => 0,
+            'start_time' => time(),
+        ];
+
+        update_option( 'seminargo_batched_import_progress', $progress, false );
+
+        // Clear old logs
+        delete_option( $this->log_option );
+
+        $this->log( 'info', '🔧 DEBUG MODE: Skipping Phase 1, starting directly with Phase 2 (image downloads)' );
+        $this->log( 'success', '📸 PHASE 2: Downloading images...' );
+        $this->flush_logs();
+
+        // Schedule first Phase 2 batch immediately
+        wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+        
+        // Force WP Cron to spawn immediately (WP Cron may not fire reliably on production)
+        if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+            spawn_cron();
+        }
+
+        wp_send_json_success([
+            'message' => 'Phase 2 started (Phase 1 skipped)',
             'progress' => $progress,
         ]);
     }
@@ -1667,7 +1841,15 @@ class Seminargo_Hotel_Importer {
                     $this->flush_logs();
 
                     update_option( 'seminargo_batched_import_progress', $progress, false );
-                    wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
+                    
+                    // CRITICAL: Directly execute Phase 2 immediately to avoid WP Cron delays on production
+                    // This ensures Phase 2 starts immediately rather than waiting for cron
+                    $this->log( 'info', '🔄 Starting Phase 2 immediately...' );
+                    $this->flush_logs();
+                    
+                    // Recursively call ourselves to process Phase 2 immediately
+                    // This bypasses WP Cron which may not fire reliably on production
+                    $this->process_single_batch();
                     return;
                 }
 
@@ -1703,6 +1885,12 @@ class Seminargo_Hotel_Importer {
 
                 // Schedule next batch
                 wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
+                
+                // Force WP Cron to spawn on production (WP Cron may not fire reliably)
+                if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                    spawn_cron();
+                }
+                
                 return;
             }
 
@@ -1710,62 +1898,96 @@ class Seminargo_Hotel_Importer {
             if ( $progress['phase'] === 'phase2' ) {
                 $batch_size = 50;
                 $offset = $progress['offset'];
+                $max_batches_in_request = 3; // Process up to 3 batches per request to avoid timeouts
+                $batches_processed = 0;
 
-                // Fetch batch from API (again, to get image data)
-                $batch_hotels = $this->fetch_hotels_batch_from_api( $offset, $batch_size );
-                $batch_count = count( $batch_hotels );
+                // Process multiple batches in same request if time allows (helps on production)
+                while ( $batches_processed < $max_batches_in_request ) {
+                    // Fetch batch from API (again, to get image data)
+                    $batch_hotels = $this->fetch_hotels_batch_from_api( $offset, $batch_size );
+                    $batch_count = count( $batch_hotels );
 
-                if ( $batch_count === 0 ) {
-                    // Phase 2 complete - finalize
-                    $progress['phase'] = 'finalize';
-                    $this->log( 'success', "✅ PHASE 2 COMPLETE! Images processed for {$progress['images_processed']} hotels" );
+                    if ( $batch_count === 0 ) {
+                        // Phase 2 complete - finalize
+                        $progress['phase'] = 'finalize';
+                        $this->log( 'success', "✅ PHASE 2 COMPLETE! Images processed for {$progress['images_processed']} hotels" );
+                        $this->flush_logs();
+
+                        update_option( 'seminargo_batched_import_progress', $progress, false );
+                        wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
+                        
+                        // Force WP Cron to spawn on production (WP Cron may not fire reliably)
+                        if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                            spawn_cron();
+                        }
+                        
+                        return;
+                    }
+
+                    // Process images for this batch
+                    foreach ( $batch_hotels as $hotel ) {
+                        if ( empty( $hotel->medias ) ) {
+                            continue;
+                        }
+
+                        try {
+                            // Find WordPress post for this hotel
+                            $args = [
+                                'post_type' => 'hotel',
+                                'post_status' => [ 'publish', 'draft' ],
+                                'meta_query' => [
+                                    [ 'key' => 'hotel_id', 'value' => $hotel->id ],
+                                ],
+                                'posts_per_page' => 1,
+                                'fields' => 'ids',
+                            ];
+                            $query = new WP_Query( $args );
+
+                            if ( $query->have_posts() ) {
+                                $post_id = $query->posts[0];
+                                $this->process_hotel_images( $post_id, $hotel );
+                                $progress['images_processed']++;
+                            }
+                        } catch ( Exception $e ) {
+                            $this->log( 'error', '❌ Image error: ' . $e->getMessage(), $hotel->businessName ?? '' );
+                        }
+                    }
+
+                    // Update offset for next batch
+                    $offset += $batch_size;
+                    $progress['offset'] = $offset;
+                    $batches_processed++;
+
+                    // Log progress every batch
+                    $this->log( 'info', "📊 Phase 2: Processed images for {$progress['images_processed']} hotels (batch {$batches_processed})" );
                     $this->flush_logs();
 
-                    update_option( 'seminargo_batched_import_progress', $progress, false );
-                    wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
-                    return;
-                }
-
-                // Process images for this batch
-                foreach ( $batch_hotels as $hotel ) {
-                    if ( empty( $hotel->medias ) ) {
-                        continue;
-                    }
-
-                    try {
-                        // Find WordPress post for this hotel
-                        $args = [
-                            'post_type' => 'hotel',
-                            'post_status' => [ 'publish', 'draft' ],
-                            'meta_query' => [
-                                [ 'key' => 'hotel_id', 'value' => $hotel->id ],
-                            ],
-                            'posts_per_page' => 1,
-                            'fields' => 'ids',
-                        ];
-                        $query = new WP_Query( $args );
-
-                        if ( $query->have_posts() ) {
-                            $post_id = $query->posts[0];
-                            $this->process_hotel_images( $post_id, $hotel );
-                            $progress['images_processed']++;
-                        }
-                    } catch ( Exception $e ) {
-                        $this->log( 'error', '❌ Image error: ' . $e->getMessage(), $hotel->businessName ?? '' );
+                    // Check execution time - if we're running low, schedule next batch and exit
+                    $elapsed = time() - ( $progress['start_time'] ?? time() );
+                    if ( $elapsed > 240 ) { // Leave 60 seconds buffer out of 300 second limit
+                        $this->log( 'info', "⏱️ Approaching time limit, scheduling next batch..." );
+                        break;
                     }
                 }
 
-                // Update offset for next batch
-                $progress['offset'] += $batch_size;
-
-                // Log progress every batch
-                $this->log( 'info', "📊 Phase 2: Processed images for {$progress['images_processed']} hotels" );
-                $this->flush_logs();
-
+                // Save progress after processing batch(es)
                 update_option( 'seminargo_batched_import_progress', $progress, false );
 
                 // Schedule next batch
                 wp_schedule_single_event( time() + 1, 'seminargo_process_import_batch' );
+                
+                // Force WP Cron to spawn on production (WP Cron may not fire reliably)
+                if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                    spawn_cron();
+                }
+                
+                // If we processed multiple batches, try to continue immediately if time allows
+                if ( $batches_processed > 1 && ( time() - ( $progress['start_time'] ?? time() ) ) < 240 ) {
+                    $this->log( 'info', "🔄 Continuing with next batch immediately..." );
+                    $this->flush_logs();
+                    $this->process_single_batch(); // Continue processing
+                }
+                
                 return;
             }
 
@@ -1833,6 +2055,11 @@ class Seminargo_Hotel_Importer {
 
             // Schedule retry
             wp_schedule_single_event( time() + 5, 'seminargo_process_import_batch' );
+            
+            // Force WP Cron to spawn on production (WP Cron may not fire reliably)
+            if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                spawn_cron();
+            }
         }
     }
 
@@ -2352,8 +2579,10 @@ class Seminargo_Hotel_Importer {
             $post_id = $post->ID;
             $has_changes = false;
 
-            // Check and update title
-            if ( $post->post_title !== $hotel_title ) {
+            // Check and update title (normalize whitespace for comparison)
+            $normalized_title = trim( $hotel_title );
+            $normalized_post_title = trim( $post->post_title );
+            if ( $normalized_post_title !== $normalized_title ) {
                 $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'title', $post->post_title, $hotel_title );
                 $has_changes = true;
             }
@@ -2364,8 +2593,10 @@ class Seminargo_Hotel_Importer {
                 $has_changes = true;
             }
 
-            // Check and update content
-            if ( $post->post_content !== $content ) {
+            // Check and update content (normalize whitespace for comparison)
+            $normalized_content = trim( $content );
+            $normalized_post_content = trim( $post->post_content );
+            if ( $normalized_post_content !== $normalized_content ) {
                 $this->log( 'update', 'Updated hotel: ' . $hotel_title, $hotel_title, 'content', substr( $post->post_content, 0, 50 ) . '...', substr( $content, 0, 50 ) . '...' );
                 $has_changes = true;
             }
@@ -2393,6 +2624,8 @@ class Seminargo_Hotel_Importer {
                 return 'updated';
             }
 
+            // Log that hotel was checked but no changes detected
+            $this->log( 'info', 'Checked hotel: ' . $hotel_title . ' - no changes detected', $hotel_title );
             return 'unchanged';
         }
     }
@@ -2483,7 +2716,6 @@ class Seminargo_Hotel_Importer {
 
         // Calculate capacity from meeting rooms if API doesn't provide it
         $max_capacity = $hotel->maxCapacityPeople ?? 0;
-        $max_rooms = $hotel->maxCapacityRooms ?? 0;
 
         if ( $max_capacity == 0 && ! empty( $hotel->meetingRooms ) ) {
             foreach ( $hotel->meetingRooms as $room ) {
@@ -2500,12 +2732,11 @@ class Seminargo_Hotel_Importer {
             }
         }
 
-        if ( $max_rooms == 0 && ! empty( $hotel->meetingRooms ) ) {
-            $max_rooms = count( $hotel->meetingRooms );
-        }
+        // ALWAYS count meeting rooms from meetingRooms array (NOT maxCapacityRooms which is hotel bedrooms!)
+        $meeting_rooms_count = ! empty( $hotel->meetingRooms ) ? count( $hotel->meetingRooms ) : 0;
 
         $meta_fields['capacity'] = $max_capacity;
-        $meta_fields['rooms'] = $max_rooms;
+        $meta_fields['rooms'] = $meeting_rooms_count; // Number of MEETING rooms (Tagungsräume)
 
         foreach ( $meta_fields as $key => $value ) {
             $old_value = get_post_meta( $post_id, $key, true );
@@ -2527,7 +2758,17 @@ class Seminargo_Hotel_Importer {
                 $is_meaningful_change = ! in_array( $key, $json_fields );
 
                 if ( ! $is_new && $is_meaningful_change ) {
-                    $this->log( 'update', 'Updated hotel: ' . $hotel_name, $hotel_name, $key, $old_value, $new_value );
+                    // Check if values are actually different (normalize strings for comparison)
+                    $values_different = is_string( $old_value ) && is_string( $new_value ) 
+                        ? trim( $old_value ) !== trim( $new_value )
+                        : $old_value != $new_value;
+                    
+                    if ( $values_different ) {
+                        $this->log( 'update', 'Updated hotel: ' . $hotel_name, $hotel_name, $key, $old_value, $new_value );
+                    } else {
+                        // Log that field was checked but no changes detected
+                        $this->log( 'info', 'Checked hotel: ' . $hotel_name . ' - ' . $key . ': no changes detected', $hotel_name );
+                    }
                 }
                 $has_changes = true;
             }
@@ -2722,10 +2963,13 @@ class Seminargo_Hotel_Importer {
                     continue;
                 }
 
+                // Store original URL for logging
+                $original_url = $image_url;
+                
                 // URL encode the image URL to handle spaces and special characters
                 $image_url = $this->encode_image_url( $image_url );
 
-                // Check if image already exists
+                // Check if image already exists (using encoded URL)
                 $existing = get_posts( [
                     'post_type'      => 'attachment',
                     'meta_query'     => [
@@ -2741,11 +2985,32 @@ class Seminargo_Hotel_Importer {
                     $attachment_id = $existing[0]->ID;
                     $skipped++;
                 } else {
-                    // Download image to temp file
-                    $tmp = download_url( $image_url );
+                    // Download image to temp file with retry logic
+                    $tmp = false;
+                    $download_urls = [ $image_url ]; // Try encoded URL first
+                    
+                    // If URL was modified by encoding, also try original as fallback
+                    if ( $original_url !== $image_url ) {
+                        $download_urls[] = $original_url;
+                    }
 
-                    if ( is_wp_error( $tmp ) ) {
-                        $this->log( 'error', 'Failed to download image: ' . $image_url, $hotel->businessName );
+                    $last_error = null;
+                    foreach ( $download_urls as $try_url ) {
+                        $tmp = download_url( $try_url );
+                        
+                        if ( ! is_wp_error( $tmp ) ) {
+                            // Success - update image_url to the one that worked
+                            $image_url = $try_url;
+                            break;
+                        } else {
+                            $last_error = $tmp;
+                            $tmp = false; // Reset for next attempt
+                        }
+                    }
+
+                    if ( is_wp_error( $tmp ) || $tmp === false ) {
+                        $error_msg = $last_error instanceof WP_Error ? $last_error->get_error_message() : ( $tmp instanceof WP_Error ? $tmp->get_error_message() : 'Unknown error' );
+                        $this->log( 'error', 'Failed to download image: ' . $image_url . ' (Error: ' . $error_msg . ')', $hotel->businessName );
                         continue;
                     }
 
@@ -2856,49 +3121,70 @@ class Seminargo_Hotel_Importer {
 
     /**
      * URL encode image URLs to handle spaces and special characters
+     * Fixes broken UTF-8 encoding from API (e.g., %C3_ should be %C3%9F for ß)
      */
     private function encode_image_url( $url ) {
+        if ( empty( $url ) ) {
+            return $url;
+        }
+
         $parsed = parse_url( $url );
         if ( ! $parsed || ! isset( $parsed['path'] ) ) {
             return $url;
         }
 
-        // Split path into segments and encode each separately
-        $path_segments = explode( '/', $parsed['path'] );
+        $path = $parsed['path'];
+
+        // Fix broken UTF-8 encoding patterns from API
+        // The API sends broken encoding where second byte is replaced with underscore
+        // Common patterns:
+        // - %C3_en = "ßen" (außen, Außenansicht) -> should be %C3%9Fen
+        // - %C3_ = "ß" -> should be %C3%9F
+        // - %C3%BC_ = "ü" -> should be %C3%BC
+        
+        // Fix %C3_ pattern (most common - represents ß)
+        // This handles: au%C3_en, Au%C3_enansicht, etc.
+        $path = preg_replace( '/%C3_([a-z])/i', '%C3%9F$1', $path );
+        
+        // Fix standalone %C3_ (not followed by letter)
+        $path = str_replace( '%C3_', '%C3%9F', $path );
+
+        // Fix other broken patterns with trailing underscore
+        $path = str_replace( '%C3%BC_', '%C3%BC', $path ); // ü
+        $path = str_replace( '%C3%A4_', '%C3%A4', $path ); // ä
+        $path = str_replace( '%C3%B6_', '%C3%B6', $path ); // ö
+
+        // Note: We only fix known broken patterns (German characters above)
+        // Generic %XX_ patterns are left as-is to avoid corrupting URLs with other character encodings
+        // If other broken patterns are found, they should be added as specific fixes above
+
+        // Now properly encode any remaining unencoded characters
+        // Split path into segments to preserve slashes
+        $path_segments = explode( '/', $path );
         $encoded_segments = array_map( function( $segment ) {
             if ( empty( $segment ) ) {
                 return $segment;
             }
 
-            // Fix common broken UTF-8 encoding patterns from API
-            // %C3_ should be %C3%9F (ß), %C3%BC (ü), etc.
-            // The API sends broken encoding where second byte is replaced with underscore
-
-            // Pattern 1: %C3_ followed by lowercase letter = broken ß, replace with proper encoding
-            if ( preg_match( '/%C3_([a-z])/i', $segment ) ) {
-                // This is broken encoding - %C3 needs a second byte
-                // Most common: %C3_ = %C3%9F (ß)
-                // Replace %C3_ with %C3%9F (ß is most common)
-                $segment = str_replace( '%C3_', '%C3%9F', $segment );
+            // If segment contains encoded characters, try to decode and re-encode properly
+            if ( preg_match( '/%[0-9A-Fa-f]{2}/', $segment ) ) {
+                // Try to decode - if it decodes successfully, re-encode
+                $decoded = @rawurldecode( $segment );
+                if ( $decoded !== false && $decoded !== $segment ) {
+                    // Successfully decoded, now re-encode properly
+                    return rawurlencode( $decoded );
+                }
+                // If decode failed or returned same, check if it's already properly encoded
+                // Properly encoded segments should decode without errors
+                if ( ! preg_match( '/[^A-Za-z0-9._~%\-]/', $decoded ) ) {
+                    return $segment; // Already properly encoded
+                }
             }
 
-            // Pattern 2: Fix other common broken patterns
-            $segment = str_replace( '%C3%BC_', '%C3%BC', $segment ); // ü
-            $segment = str_replace( '%C3%A4_', '%C3%A4', $segment ); // ä
-            $segment = str_replace( '%C3%B6_', '%C3%B6', $segment ); // ö
-
-            // Pattern 3: Any other %XX_ pattern (incomplete encoding)
-            $segment = preg_replace( '/%([0-9A-Fa-f]{2})_/', '%$1%9F', $segment );
-
-            // If already properly encoded, return as-is
-            if ( preg_match( '/%[0-9A-Fa-f]{2}/', $segment ) && ! preg_match( '/[^A-Za-z0-9._~%\-]/', rawurldecode( $segment ) ) ) {
-                return $segment;
-            }
-
-            // Otherwise decode and re-encode properly
-            $decoded = rawurldecode( $segment );
-            return rawurlencode( $decoded );
+            // Encode any unencoded special characters
+            return rawurlencode( $segment );
         }, $path_segments );
+        
         $encoded_path = implode( '/', $encoded_segments );
 
         // Rebuild URL
@@ -2924,81 +3210,50 @@ class Seminargo_Hotel_Importer {
             return;
         }
 
-        // Increase limits for cron
-        @ini_set( 'memory_limit', '512M' );
-        @ini_set( 'max_execution_time', 300 ); // 5 minutes for cron
+        // Use the same batched import system as manual "Fetch Now"
+        // This ensures consistency and handles all hotels + images
+        $existing_progress = get_option( 'seminargo_batched_import_progress', null );
 
-        // Get current progress
-        $progress = get_option( $this->auto_import_progress_option, [
-            'offset' => 0,
-            'total_imported' => 0,
-            'is_complete' => false,
-            'last_run' => 0,
-        ] );
+        // If no import is running, start a new one
+        if ( ! $existing_progress || $existing_progress['status'] !== 'running' ) {
+            $this->log( 'info', '🤖 Auto-import: Starting new batched import...' );
+            $this->flush_logs();
 
-        // Don't run if already complete
-        if ( $progress['is_complete'] ) {
-            return;
-        }
+            // Initialize progress (same as manual import)
+            $progress = [
+                'status' => 'running',
+                'phase' => 'phase1',
+                'offset' => 0,
+                'total_hotels' => 0,
+                'hotels_processed' => 0,
+                'images_processed' => 0,
+                'created' => 0,
+                'updated' => 0,
+                'drafted' => 0,
+                'errors' => 0,
+                'start_time' => time(),
+            ];
 
-        $batch_size = 500; // Import 500 hotels per cron run
-        $offset = $progress['offset'];
+            update_option( 'seminargo_batched_import_progress', $progress, false );
 
-        $this->log( 'info', "🤖 Auto-import batch started (offset: {$offset}, batch: {$batch_size})" );
+            // Mark old auto-import as complete
+            update_option( $this->auto_import_progress_option, [
+                'offset' => 0,
+                'total_imported' => 0,
+                'is_complete' => true,
+                'last_run' => time(),
+            ] );
 
-        try {
-            // Fetch batch from API
-            $hotels = $this->fetch_hotels_batch_from_api( $offset, $batch_size );
-
-            if ( empty( $hotels ) ) {
-                // No more hotels - mark as complete
-                $progress['is_complete'] = true;
-                $progress['last_run'] = time();
-                update_option( $this->auto_import_progress_option, $progress );
-                $this->log( 'success', '✅ Auto-import completed! Total: ' . $progress['total_imported'] . ' hotels' );
-                return;
+            // Schedule first batch immediately
+            wp_schedule_single_event( time(), 'seminargo_process_import_batch' );
+            
+            // Force WP Cron to spawn on production (WP Cron may not fire reliably)
+            if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                spawn_cron();
             }
-
-            $this->log( 'info', '📦 Fetched ' . count( $hotels ) . ' hotels in this batch' );
-
-            // Process each hotel
-            $created = 0;
-            $updated = 0;
-            $errors = 0;
-
-            foreach ( $hotels as $hotel ) {
-                try {
-                    // Process hotel WITHOUT images (fast - avoids timeout)
-                    // Images will be downloaded in separate Phase 2 or via manual sync
-                    $result = $this->process_hotel( $hotel, false );
-                    if ( $result === 'created' ) {
-                        $created++;
-                    } elseif ( $result === 'updated' ) {
-                        $updated++;
-                    }
-                } catch ( Exception $e ) {
-                    $errors++;
-                    $this->log( 'error', '❌ Error processing hotel: ' . $e->getMessage(), $hotel->businessName ?? 'Unknown' );
-                }
-            }
-
-            // Update progress
-            $progress['offset'] += count( $hotels );
-            $progress['total_imported'] += $created + $updated;
-            $progress['last_run'] = time();
-
-            // If we got fewer hotels than batch_size, we're done
-            if ( count( $hotels ) < $batch_size ) {
-                $progress['is_complete'] = true;
-                $this->log( 'success', '✅ Auto-import completed! Total: ' . $progress['total_imported'] . ' hotels' );
-            }
-
-            update_option( $this->auto_import_progress_option, $progress );
-
-            $this->log( 'success', "✅ Batch complete: {$created} created, {$updated} updated, {$errors} errors. Progress: {$progress['offset']} hotels" );
-
-        } catch ( Exception $e ) {
-            $this->log( 'error', '❌ Auto-import batch failed: ' . $e->getMessage() );
+        } else {
+            // Import already running, let it continue
+            $this->log( 'info', '🤖 Auto-import: Batched import already in progress, skipping...' );
         }
     }
 
@@ -3155,7 +3410,8 @@ class Seminargo_Hotel_Importer {
             'enabled' => $enabled,
             'progress' => $progress,
             'next_run' => $next_run,
-            'next_run_formatted' => $next_run ? date( 'Y-m-d H:i:s', $next_run ) : 'Not scheduled',
+            'next_run_formatted' => $next_run ? date_i18n( 'Y-m-d H:i:s', $next_run ) : 'Not scheduled',
+            'last_run_formatted' => ! empty( $progress['last_run'] ) && $progress['last_run'] > 0 ? date_i18n( 'Y-m-d H:i:s', $progress['last_run'] ) : null,
         ] );
     }
 }
