@@ -84,10 +84,16 @@
         // Apply Filters Function
         function applyFilters() {
             hotelCards.forEach(card => {
-                let shouldShow = true;
+                let shouldShow = false;
 
-                if (currentFilterMode === 'top') {
-                    // Show all hotels for top filter
+                // Check if card belongs to current filter tab
+                const cardTabs = card.dataset.filterTabs ? card.dataset.filterTabs.split(' ') : [];
+                const belongsToCurrentTab = cardTabs.includes(currentFilterMode);
+
+                if (!belongsToCurrentTab) {
+                    shouldShow = false;
+                } else if (currentFilterMode === 'top') {
+                    // Show hotels for top filter
                     shouldShow = true;
                 } else if (currentFilterMode === 'theme') {
                     // Filter by theme (for now, show all - can be enhanced)
@@ -95,7 +101,7 @@
                         shouldShow = true;
                     } else {
                         // You can add theme filtering logic here
-                        // For now, showing all cards
+                        // For now, showing all cards that belong to theme tab
                         shouldShow = true;
                     }
                 } else if (currentFilterMode === 'location') {

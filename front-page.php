@@ -14,9 +14,22 @@ get_header(); ?>
         <section class="hero-section-wrapper">
             <div class="hero-search-area">
                 <div class="container">
+                    <?php
+                    // Get hero H1 and description from page meta
+                    $hero_h1 = get_post_meta( $page_id, 'hero_h1', true );
+                    $hero_description = get_post_meta( $page_id, 'hero_description', true );
+                    
+                    // Fallback to defaults if not set
+                    if ( empty( $hero_h1 ) ) {
+                        $hero_h1 = 'Finden Sie Ihr perfektes Tagungshotel';
+                    }
+                    if ( empty( $hero_description ) ) {
+                        $hero_description = 'Über 24.000 Seminarhotels in Deutschland und Österreich';
+                    }
+                    ?>
                     <div class="hero-content">
-                        <h1 class="hero-title">Finden Sie Ihr perfektes Tagungshotel</h1>
-                        <p class="hero-subtitle">Über 24.000 Seminarhotels in Deutschland und Österreich</p>
+                        <h1 class="hero-title"><?php echo esc_html( $hero_h1 ); ?></h1>
+                        <p class="hero-subtitle"><?php echo esc_html( $hero_description ); ?></p>
                     </div>
 
                     <!-- seminargo Search Widget -->
@@ -33,10 +46,12 @@ get_header(); ?>
 
             <!-- Hero Background Image with CTA -->
             <?php
-            // Get hero CTA text from page meta (with fallback to defaults)
-            $page_id = get_the_ID();
+            // Get hero CTA settings from page meta (with fallback to defaults)
             $hero_cta_title = get_post_meta( $page_id, 'hero_cta_title', true );
             $hero_cta_subtitle = get_post_meta( $page_id, 'hero_cta_subtitle', true );
+            $hero_background_image = get_post_meta( $page_id, 'hero_background_image', true );
+            $hero_button_text = get_post_meta( $page_id, 'hero_button_text', true );
+            $hero_button_link = get_post_meta( $page_id, 'hero_button_link', true );
             
             // Fallback to defaults if not set
             if ( empty( $hero_cta_title ) ) {
@@ -45,8 +60,17 @@ get_header(); ?>
             if ( empty( $hero_cta_subtitle ) ) {
                 $hero_cta_subtitle = 'Finden Sie Ihre perfekte Veranstaltungsumgebung.';
             }
+            if ( empty( $hero_background_image ) ) {
+                $hero_background_image = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&h=600&fit=crop';
+            }
+            if ( empty( $hero_button_text ) ) {
+                $hero_button_text = 'Inspirier mich';
+            }
+            if ( empty( $hero_button_link ) ) {
+                $hero_button_link = '#';
+            }
             ?>
-            <a href="#" class="hero-image-section" style="background-image: url('https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&h=600&fit=crop');">
+            <a href="<?php echo esc_url( $hero_button_link ); ?>" class="hero-image-section" style="background-image: url('<?php echo esc_url( $hero_background_image ); ?>');">
                 <div class="hero-image-wrapper">
                     <div class="hero-overlay"></div>
                     <div class="hero-cta-content">
@@ -57,7 +81,7 @@ get_header(); ?>
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                                 <polyline points="12 5 19 12 12 19"></polyline>
                             </svg>
-                            <span>Inspirier mich</span>
+                            <span><?php echo esc_html( $hero_button_text ); ?></span>
                         </span>
                     </div>
                 </div>
@@ -248,33 +272,68 @@ get_header(); ?>
 
                 <div class="hotels-grid">
                     <?php
-                    // Query featured hotels from WordPress (only those marked for homepage)
-                    $featured_hotels = new WP_Query( array(
-                        'post_type'      => 'hotel',
-                        'posts_per_page' => 9,
-                        'orderby'        => 'rand',
-                        'post_status'    => 'publish',
-                        'meta_query'     => array(
-                            array(
-                                'key'     => 'featured_on_landing',
-                                'value'   => '1',
-                                'compare' => '=',
-                            ),
-                        ),
-                    ) );
+                    // Get hotel IDs for each tab
+                    $top_hotels_tab_ordered = get_post_meta( $page_id, 'top_hotels_tab_hotels_ordered', true );
+                    $top_hotels_tab_ids = ! empty( $top_hotels_tab_ordered ) ? array_map( 'intval', explode( ',', $top_hotels_tab_ordered ) ) : array();
+                    
+                    // Get theme tab collections and their hotels
+                    $theme_tab_collections_ordered = get_post_meta( $page_id, 'theme_tab_collections_ordered', true );
+                    $theme_tab_collection_ids = ! empty( $theme_tab_collections_ordered ) ? array_map( 'intval', explode( ',', $theme_tab_collections_ordered ) ) : array();
+                    $theme_tab_hotel_ids = array();
+                    if ( ! empty( $theme_tab_collection_ids ) ) {
+                        foreach ( $theme_tab_collection_ids as $collection_id ) {
+                            $collection_hotels = get_post_meta( $collection_id, 'linked_hotels', true );
+                            if ( is_array( $collection_hotels ) && ! empty( $collection_hotels ) ) {
+                                $theme_tab_hotel_ids = array_merge( $theme_tab_hotel_ids, $collection_hotels );
+                            }
+                        }
+                        $theme_tab_hotel_ids = array_unique( $theme_tab_hotel_ids );
+                    }
+                    
+                    // Get all unique hotel IDs from all tabs
+                    $all_hotel_ids = array_unique( array_merge( $top_hotels_tab_ids, $theme_tab_hotel_ids ) );
+                    
+                    // Fallback to old top_hotels_ordered if no tab-specific hotels are set
+                    if ( empty( $all_hotel_ids ) ) {
+                        $top_hotels_ordered = get_post_meta( $page_id, 'top_hotels_ordered', true );
+                        $all_hotel_ids = ! empty( $top_hotels_ordered ) ? array_map( 'intval', explode( ',', $top_hotels_ordered ) ) : array();
+                    }
 
-                    if ( $featured_hotels->have_posts() ) :
-                        while ( $featured_hotels->have_posts() ) : $featured_hotels->the_post();
+                    if ( ! empty( $all_hotel_ids ) ) :
+                        // Get hotels in the specified order
+                        $featured_hotels = get_posts( array(
+                            'post_type'      => 'hotel',
+                            'post__in'       => $all_hotel_ids,
+                            'orderby'        => 'post__in',
+                            'posts_per_page' => -1,
+                            'post_status'    => 'publish',
+                        ) );
+
+                        foreach ( $featured_hotels as $hotel_post ) :
+                            setup_postdata( $hotel_post );
+                            $hotel_id = $hotel_post->ID;
+                            
+                            // Determine which tabs this hotel belongs to
+                            $tab_filters = array();
+                            if ( in_array( $hotel_id, $top_hotels_tab_ids ) ) {
+                                $tab_filters[] = 'top';
+                            }
+                            if ( in_array( $hotel_id, $theme_tab_hotel_ids ) ) {
+                                $tab_filters[] = 'theme';
+                            }
+                            // All hotels are available in location tab
+                            $tab_filters[] = 'location';
+                            $tab_filters_attr = implode( ' ', $tab_filters );
                             // Get hotel image - same fallback pattern as single/archive pages
-                            $hotel_image = get_the_post_thumbnail_url( get_the_ID(), 'large' );
+                            $hotel_image = get_the_post_thumbnail_url( $hotel_id, 'large' );
                             if ( ! $hotel_image ) {
                                 // First try WordPress gallery (downloaded images)
-                                $gallery = get_post_meta( get_the_ID(), 'gallery', true );
+                                $gallery = get_post_meta( $hotel_id, 'gallery', true );
                                 if ( is_array( $gallery ) && ! empty( $gallery ) ) {
                                     $hotel_image = $gallery[0];
                                 } else {
                                     // Fallback to external API image URLs
-                                    $medias = json_decode( get_post_meta( get_the_ID(), 'medias_json', true ), true );
+                                    $medias = json_decode( get_post_meta( $hotel_id, 'medias_json', true ), true );
                                     if ( ! empty( $medias[0]['previewUrl'] ) ) {
                                         $hotel_image = $medias[0]['previewUrl'];
                                     } else {
@@ -284,18 +343,18 @@ get_header(); ?>
                             }
 
                             // Get hotel meta
-                            $location = get_post_meta( get_the_ID(), 'location', true ) ?: get_post_meta( get_the_ID(), 'business_address_1', true ) ?: '';
-                            $rooms = intval( get_post_meta( get_the_ID(), 'rooms', true ) );
-                            $capacity = intval( get_post_meta( get_the_ID(), 'capacity', true ) );
-                            $bedrooms = intval( get_post_meta( get_the_ID(), 'bedrooms', true ) );
-                            $stars = floatval( get_post_meta( get_the_ID(), 'stars', true ) );
-                            $rating = floatval( get_post_meta( get_the_ID(), 'rating', true ) );
+                            $location = get_post_meta( $hotel_id, 'location', true ) ?: get_post_meta( $hotel_id, 'business_address_1', true ) ?: '';
+                            $rooms = intval( get_post_meta( $hotel_id, 'rooms', true ) );
+                            $capacity = intval( get_post_meta( $hotel_id, 'capacity', true ) );
+                            $bedrooms = intval( get_post_meta( $hotel_id, 'bedrooms', true ) );
+                            $stars = floatval( get_post_meta( $hotel_id, 'stars', true ) );
+                            $rating = floatval( get_post_meta( $hotel_id, 'rating', true ) );
 
                     ?>
-                        <div class="hotel-card featured-hotel-card" data-location="<?php echo esc_attr( strtolower( $location ) ); ?>">
-                            <a href="<?php echo esc_url( get_permalink() ); ?>">
+                        <div class="hotel-card featured-hotel-card" data-location="<?php echo esc_attr( strtolower( $location ) ); ?>" data-filter-tabs="<?php echo esc_attr( $tab_filters_attr ); ?>">
+                            <a href="<?php echo esc_url( get_permalink( $hotel_id ) ); ?>">
                                 <div class="hotel-image">
-                                    <img src="<?php echo esc_url( $hotel_image ); ?>" alt="<?php echo esc_attr( get_the_title() ); ?>" loading="lazy">
+                                    <img src="<?php echo esc_url( $hotel_image ); ?>" alt="<?php echo esc_attr( get_the_title( $hotel_id ) ); ?>" loading="lazy">
                                     <?php if ( $stars > 0 ) : ?>
                                         <span class="hotel-rating-badge"><?php echo esc_html( $stars ); ?>★</span>
                                     <?php endif; ?>
@@ -310,7 +369,7 @@ get_header(); ?>
                                 </div>
                                 <div class="hotel-content">
                                     <h3 class="hotel-title">
-                                        <?php the_title(); ?>
+                                        <?php echo esc_html( get_the_title( $hotel_id ) ); ?>
                                     </h3>
                                     <?php if ( $location ) : ?>
                                         <p class="hotel-location">
@@ -355,8 +414,11 @@ get_header(); ?>
                             </a>
                         </div>
                     <?php
-                        endwhile;
+                        endforeach;
                         wp_reset_postdata();
+                    else :
+                        // Fallback message if no hotels selected
+                        echo '<p style="text-align: center; padding: 40px; color: #666;">Bitte wählen Sie Hotels auf der Startseite aus, um sie hier anzuzeigen.</p>';
                     endif;
                     ?>
                 </div>

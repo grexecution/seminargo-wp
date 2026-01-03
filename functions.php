@@ -844,6 +844,16 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
         'order'          => 'ASC',
         'post_status'    => 'publish',
     ) );
+    
+    // Get all hotel IDs for selectors (used in multiple places)
+    $all_hotel_ids_for_selectors = get_posts( array(
+        'post_type'      => 'hotel',
+        'posts_per_page' => 500,
+        'fields'         => 'ids',
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+        'post_status'    => 'publish',
+    ) );
 
     // Create lookup array for collection titles
     $collections_lookup = array();
@@ -894,6 +904,16 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                 margin: 0;
                 padding: 0;
                 min-height: 50px;
+            }
+            #available-top-hotels {
+                max-height: 300px;
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            #selected-top-hotels {
+                max-height: 250px;
+                overflow-y: auto;
+                overflow-x: hidden;
             }
             .sortable-list li {
                 display: flex;
@@ -1016,14 +1036,83 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
             }
         </style>
 
-        <!-- Hero CTA Text Settings -->
-        <div class="visibility-settings" style="background: #fff5f7; border-color: #AC2A6E;">
-            <h3>✏️ Hero CTA Text (Bildabschnitt)</h3>
-            <p style="font-size: 12px; color: #666; margin: 0 0 15px 0;">Bearbeiten Sie den Text, der auf dem großen Hintergrundbild angezeigt wird.</p>
+        <!-- Hero Section Settings -->
+        <div class="visibility-settings" style="background: #f0f6ff; border-color: #2271b1;">
+            <h3>✏️ Hero Bereich (Oberer Bereich)</h3>
+            <p style="font-size: 12px; color: #666; margin: 0 0 15px 0;">Bearbeiten Sie die Hauptüberschrift und Beschreibung im Hero-Bereich.</p>
+            
+            <?php
+            $hero_h1 = get_post_meta( $post->ID, 'hero_h1', true );
+            $hero_description = get_post_meta( $post->ID, 'hero_description', true );
+            ?>
             
             <div style="margin-bottom: 15px;">
+                <label for="hero_h1" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                    H1 Überschrift:
+                </label>
+                <input type="text"
+                       id="hero_h1"
+                       name="hero_h1"
+                       value="<?php echo esc_attr( $hero_h1 ?: 'Finden Sie Ihr perfektes Tagungshotel' ); ?>"
+                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                       placeholder="z.B. Finden Sie Ihr perfektes Tagungshotel">
+                <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                    Die Hauptüberschrift über dem Such-Widget.
+                </p>
+            </div>
+
+            <div>
+                <label for="hero_description" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                    Beschreibung:
+                </label>
+                <input type="text"
+                       id="hero_description"
+                       name="hero_description"
+                       value="<?php echo esc_attr( $hero_description ?: 'Über 24.000 Seminarhotels in Deutschland und Österreich' ); ?>"
+                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                       placeholder="z.B. Über 24.000 Seminarhotels in Deutschland und Österreich">
+                <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                    Die Beschreibung unter der H1 Überschrift.
+                </p>
+            </div>
+        </div>
+
+        <!-- Hero CTA Text Settings -->
+        <div class="visibility-settings" style="background: #fff5f7; border-color: #AC2A6E;">
+            <h3>✏️ Hero Bildabschnitt (Unter dem Widget)</h3>
+            <p style="font-size: 12px; color: #666; margin: 0 0 15px 0;">Bearbeiten Sie den Bildabschnitt mit Hintergrundbild, Text und Button.</p>
+            
+            <?php
+            $hero_background_image = get_post_meta( $post->ID, 'hero_background_image', true );
+            $hero_button_text = get_post_meta( $post->ID, 'hero_button_text', true );
+            $hero_button_link = get_post_meta( $post->ID, 'hero_button_link', true );
+            $default_hero_image = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&h=600&fit=crop';
+            $display_image = $hero_background_image ?: $default_hero_image;
+            $is_custom_image = $hero_background_image && $hero_background_image !== $default_hero_image;
+            ?>
+            
+            <div style="margin-bottom: 15px;">
+                <label for="hero_background_image" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                    Hintergrundbild:
+                </label>
+                <div class="hero-background-image-preview" style="margin-bottom: 10px;">
+                    <img src="<?php echo esc_url( $display_image ); ?>" style="max-width: 400px; height: auto; border-radius: 8px; border: 1px solid #ddd;">
+                </div>
+                <input type="hidden" id="hero_background_image" name="hero_background_image" value="<?php echo esc_attr( $hero_background_image ?: $default_hero_image ); ?>">
+                <button type="button" class="button button-secondary" id="upload_hero_background_image" style="margin-right: 8px;">
+                    <?php esc_html_e( 'Bild auswählen', 'seminargo' ); ?>
+                </button>
+                <button type="button" class="button" id="remove_hero_background_image" <?php echo ! $is_custom_image ? 'style="display:none;"' : ''; ?>>
+                    <?php esc_html_e( 'Entfernen', 'seminargo' ); ?>
+                </button>
+                <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                    Wählen Sie ein Hintergrundbild für den Hero-Bildabschnitt aus der Medienbibliothek aus.
+                </p>
+            </div>
+
+            <div style="margin-bottom: 15px;">
                 <label for="hero_cta_title" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
-                    Titel:
+                    H2 Überschrift:
                 </label>
                 <input type="text"
                        id="hero_cta_title"
@@ -1032,13 +1121,13 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
                        placeholder="z.B. Kreativer Workshop im Grünen?">
                 <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
-                    Dieser Text wird als Überschrift auf dem Hero-Bild angezeigt.
+                    Die H2 Überschrift auf dem Hero-Bild.
                 </p>
             </div>
 
-            <div>
+            <div style="margin-bottom: 15px;">
                 <label for="hero_cta_subtitle" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
-                    Untertitel:
+                    Beschreibung (Paragraph):
                 </label>
                 <input type="text"
                        id="hero_cta_subtitle"
@@ -1047,8 +1136,39 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
                        placeholder="z.B. Finden Sie Ihre perfekte Veranstaltungsumgebung.">
                 <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
-                    Dieser Text wird unterhalb des Titels angezeigt.
+                    Der Beschreibungstext unter der H2 Überschrift.
                 </p>
+            </div>
+
+            <div style="margin-bottom: 15px; display: flex; gap: 15px;">
+                <div style="flex: 1;">
+                    <label for="hero_button_text" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                        Button Text:
+                    </label>
+                    <input type="text"
+                           id="hero_button_text"
+                           name="hero_button_text"
+                           value="<?php echo esc_attr( $hero_button_text ?: 'Inspirier mich' ); ?>"
+                           style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                           placeholder="z.B. Inspirier mich">
+                    <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                        Der Text auf dem Button.
+                    </p>
+                </div>
+                <div style="flex: 1;">
+                    <label for="hero_button_link" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">
+                        Button Link:
+                    </label>
+                    <input type="text"
+                           id="hero_button_link"
+                           name="hero_button_link"
+                           value="<?php echo esc_attr( $hero_button_link ?: '#' ); ?>"
+                           style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                           placeholder="# oder /home oder https://example.com">
+                    <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                        URL, Slug (z.B. /home) oder # für keinen Link.
+                    </p>
+                </div>
             </div>
         </div>
 
@@ -1094,7 +1214,7 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                 </div>
             </div>
 
-            <div class="visibility-group">
+            <div class="visibility-group" id="top-hotels-filter-tabs-group" style="<?php echo $show_top_hotels ? '' : 'display: none;'; ?>">
                 <h4>Top Hotels Filter-Tabs</h4>
                 <p style="font-size: 12px; color: #666; margin: 0 0 12px 0;">Steuere welche Filter-Tabs in der "Top-Veranstaltungsorte" Sektion angezeigt werden</p>
                 <div class="checkbox-group">
@@ -1131,10 +1251,103 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                         </label>
                     </div>
                 </div>
+                
+                <!-- Top Hotels Tab Hotel Selector -->
+                <div id="top-hotels-tab-selector" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px; <?php echo $show_top_tab ? '' : 'display: none;'; ?>">
+                    <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Hotels für "Top Hotels" Tab auswählen:</h4>
+                    <?php
+                    $top_hotels_tab_hotels = get_post_meta( $post->ID, 'top_hotels_tab_hotels_ordered', true );
+                    $selected_top_hotels_tab_hotels = ! empty( $top_hotels_tab_hotels ) ? array_map( 'intval', explode( ',', $top_hotels_tab_hotels ) ) : array();
+                    ?>
+                    <div style="display: flex; gap: 15px;">
+                        <div style="flex: 1;">
+                            <h5 style="font-size: 12px; margin: 0 0 8px 0;">✓ Ausgewählte Hotels</h5>
+                            <ul class="sortable-list" id="selected-top-hotels-tab-hotels" style="min-height: 100px; max-height: 200px; overflow-y: auto;">
+                                <?php 
+                                if ( ! empty( $selected_top_hotels_tab_hotels ) ) {
+                                    $hotels = get_posts( array(
+                                        'post_type' => 'hotel',
+                                        'post__in' => $selected_top_hotels_tab_hotels,
+                                        'posts_per_page' => -1,
+                                        'orderby' => 'post__in',
+                                    ) );
+                                    foreach ( $hotels as $hotel ) : ?>
+                                        <li data-id="<?php echo esc_attr( $hotel->ID ); ?>" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <span style="cursor: move;">⋮⋮</span>
+                                                <span style="flex: 1; margin: 0 10px;"><?php echo esc_html( $hotel->post_title ); ?></span>
+                                                <button type="button" class="remove-btn" onclick="removeHotelFromList(this, 'top-hotels-tab')" style="padding: 2px 6px; font-size: 16px;">×</button>
+                                            </div>
+                                        </li>
+                                    <?php endforeach;
+                                }
+                                ?>
+                            </ul>
+                            <input type="hidden" name="top_hotels_tab_hotels_ordered" id="top-hotels-tab-hotels-input" value="<?php echo esc_attr( implode( ',', $selected_top_hotels_tab_hotels ) ); ?>">
+                        </div>
+                        <div style="flex: 1;">
+                            <h5 style="font-size: 12px; margin: 0 0 8px 0;">Verfügbare Hotels</h5>
+                            <input type="text" 
+                                   id="top-hotels-tab-hotel-search" 
+                                   placeholder="Hotels suchen..." 
+                                   style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; margin-bottom: 8px;"
+                                   onkeyup="filterHotelList(this.value, 'top-hotels-tab')">
+                            <ul class="sortable-list available-list" id="available-top-hotels-tab-hotels" style="min-height: 100px; max-height: 200px; overflow-y: auto;">
+                                <?php 
+                                $available_hotel_ids_for_tab = array_diff( $all_hotel_ids_for_selectors, $selected_top_hotels_tab_hotels );
+                                if ( ! empty( $available_hotel_ids_for_tab ) ) {
+                                    $available_hotels = get_posts( array(
+                                        'post_type' => 'hotel',
+                                        'post__in' => array_slice( $available_hotel_ids_for_tab, 0, 100 ),
+                                        'posts_per_page' => 100,
+                                        'orderby' => 'title',
+                                        'order' => 'ASC',
+                                    ) );
+                                    foreach ( $available_hotels as $hotel ) : ?>
+                                        <li data-id="<?php echo esc_attr( $hotel->ID ); ?>" data-title="<?php echo esc_attr( strtolower( $hotel->post_title ) ); ?>" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <span style="flex: 1;"><?php echo esc_html( $hotel->post_title ); ?></span>
+                                                <button type="button" class="add-btn" onclick="addHotelToList(this, 'top-hotels-tab')" style="padding: 2px 8px; font-size: 14px;">+</button>
+                                            </div>
+                                        </li>
+                                    <?php endforeach;
+                                }
+                                ?>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Nach Thema Tab Collection Selector -->
+                <div id="theme-tab-selector" style="margin-top: 20px; padding: 15px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; <?php echo $show_theme_tab ? '' : 'display: none;'; ?>">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #856404; flex-shrink: 0;">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+                        </svg>
+                        <div>
+                            <h4 style="margin: 0 0 5px 0; font-size: 14px; color: #856404;">🏷️ "Nach Thema" Tab</h4>
+                            <p style="margin: 0; font-size: 12px; color: #856404;">Die Auswahlfunktion für diesen Tab ist noch nicht verfügbar. Diese Funktion wird in einer zukünftigen Version hinzugefügt.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Nach Region Tab Selector -->
+                <div id="location-tab-selector" style="margin-top: 20px; padding: 15px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; <?php echo $show_location_tab ? '' : 'display: none;'; ?>">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #856404; flex-shrink: 0;">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+                        </svg>
+                        <div>
+                            <h4 style="margin: 0 0 5px 0; font-size: 14px; color: #856404;">🌍 "Nach Region" Tab</h4>
+                            <p style="margin: 0; font-size: 12px; color: #856404;">Die Auswahlfunktion für diesen Tab ist noch nicht verfügbar. Diese Funktion wird in einer zukünftigen Version hinzugefügt.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Event Types Section -->
+        <div id="event-types-selection-section" style="<?php echo $show_event_types ? '' : 'display: none;'; ?>">
         <h3>Veranstaltungsarten Sektion (Event Types)</h3>
         <p class="helper-text">Ziehen Sie Collections, um die Reihenfolge zu ändern. Max. 6 Collections. <span class="collection-count" id="event-types-count">(<?php echo count( $selected_event_types ); ?>/6)</span></p>
 
@@ -1173,8 +1386,130 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                 </ul>
             </div>
         </div>
+        </div> <!-- End event-types-selection-section -->
+
+        <!-- Top Hotels Section -->
+        <div id="top-hotels-selection-section" style="<?php echo ( $show_top_hotels && ! empty( $selected_top_hotels ) ) ? '' : 'display: none;'; ?>">
+        <h3>⭐ Top Hotels Sektion (Top-Veranstaltungsorte)</h3>
+        <p class="helper-text">Wählen Sie Hotels aus, die auf der Startseite angezeigt werden sollen. Ziehen Sie Hotels, um die Reihenfolge zu ändern. <span class="collection-count" id="top-hotels-count">(<?php 
+            $top_hotels = get_post_meta( $post->ID, 'top_hotels_ordered', true );
+            $selected_top_hotels = ! empty( $top_hotels ) ? array_map( 'intval', explode( ',', $top_hotels ) ) : array();
+            echo count( $selected_top_hotels ); 
+        ?>)</span></p>
+
+        <?php
+        // Optimized query: Only get IDs first to reduce memory usage
+        $all_hotel_ids = get_posts( array(
+            'post_type'      => 'hotel',
+            'posts_per_page' => 500, // Limit to 500 to prevent memory issues
+            'fields'         => 'ids', // Only get IDs to save memory
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+            'post_status'    => 'publish',
+        ) );
+
+        // Get full hotel objects only for selected hotels and a limited set for available
+        $hotels_lookup = array();
+        
+        // First, get selected hotels (always include these)
+        if ( ! empty( $selected_top_hotels ) ) {
+            $selected_hotels = get_posts( array(
+                'post_type'      => 'hotel',
+                'post__in'       => $selected_top_hotels,
+                'posts_per_page' => -1,
+                'post_status'    => 'publish',
+            ) );
+            foreach ( $selected_hotels as $hotel ) {
+                $hotels_lookup[ $hotel->ID ] = $hotel->post_title;
+            }
+        }
+        
+        // Get available hotels (limited set for performance)
+        $available_hotel_ids = array_diff( $all_hotel_ids, $selected_top_hotels );
+        if ( ! empty( $available_hotel_ids ) ) {
+            $available_hotels = get_posts( array(
+                'post_type'      => 'hotel',
+                'post__in'       => array_slice( $available_hotel_ids, 0, 200 ), // Limit to 200 available hotels
+                'posts_per_page' => 200,
+                'orderby'        => 'title',
+                'order'          => 'ASC',
+                'post_status'    => 'publish',
+            ) );
+            foreach ( $available_hotels as $hotel ) {
+                if ( ! isset( $hotels_lookup[ $hotel->ID ] ) ) {
+                    $hotels_lookup[ $hotel->ID ] = $hotel->post_title;
+                }
+            }
+        }
+        
+        // Create array of all hotels for display (selected + available)
+        $all_hotels = array();
+        foreach ( $hotels_lookup as $hotel_id => $hotel_title ) {
+            $all_hotels[] = (object) array(
+                'ID' => $hotel_id,
+                'post_title' => $hotel_title,
+            );
+        }
+        ?>
+        
+        <div style="margin-bottom: 15px; padding: 10px; background: #f9f9f9; border-radius: 4px; font-size: 12px; color: #666;">
+            <strong>💡 Tipp:</strong> Es werden bis zu 200 verfügbare Hotels angezeigt. Verwenden Sie die Suche, um spezifische Hotels zu finden, oder fügen Sie Hotels direkt über die Hotel-ID hinzu.
+        </div>
+
+        <div class="collections-manager">
+            <div class="selected-collections">
+                <h4>✓ Ausgewählte Hotels (Reihenfolge änderbar)</h4>
+                <ul class="sortable-list" id="selected-top-hotels">
+                    <?php foreach ( $selected_top_hotels as $hotel_id ) : ?>
+                        <?php if ( isset( $hotels_lookup[ $hotel_id ] ) ) : ?>
+                            <li data-id="<?php echo esc_attr( $hotel_id ); ?>">
+                                <div class="collection-item-handle">
+                                    <span class="drag-handle">⋮⋮</span>
+                                    <span><?php echo esc_html( $hotels_lookup[ $hotel_id ] ); ?></span>
+                                </div>
+                                <button type="button" class="remove-btn" onclick="removeHotel(this)">×</button>
+                            </li>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </ul>
+                <input type="hidden" name="top_hotels_ordered" id="top-hotels-input" value="<?php echo esc_attr( implode( ',', $selected_top_hotels ) ); ?>">
+            </div>
+
+            <div class="available-collections">
+                <h4>Verfügbare Hotels</h4>
+                <div style="margin-bottom: 10px;">
+                    <input type="text" 
+                           id="hotel-search-input" 
+                           placeholder="Hotels suchen..." 
+                           style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;"
+                           onkeyup="filterHotels(this.value)">
+                </div>
+                <ul class="sortable-list available-list" id="available-top-hotels" style="max-height: 300px; overflow-y: auto; overflow-x: hidden;">
+                    <?php foreach ( $all_hotels as $hotel ) : ?>
+                        <?php if ( ! in_array( $hotel->ID, $selected_top_hotels ) ) : ?>
+                            <li data-id="<?php echo esc_attr( $hotel->ID ); ?>" data-title="<?php echo esc_attr( strtolower( $hotel->post_title ) ); ?>">
+                                <div class="collection-item-handle">
+                                    <span><?php echo esc_html( $hotel->post_title ); ?></span>
+                                </div>
+                                <button type="button" class="add-btn" onclick="addHotel(this)">+</button>
+                            </li>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </ul>
+                <p style="margin-top: 10px; font-size: 11px; color: #666; font-style: italic;">
+                    <?php 
+                    $total_hotels = wp_count_posts( 'hotel' )->publish;
+                    if ( $total_hotels > 200 ) {
+                        echo sprintf( 'Zeige 200 von %d verfügbaren Hotels. Verwenden Sie die Suche, um spezifische Hotels zu finden.', $total_hotels );
+                    }
+                    ?>
+                </p>
+            </div>
+        </div>
+        </div> <!-- End top-hotels-selection-section -->
 
         <!-- Popular Locations Section -->
+        <div id="locations-selection-section" style="<?php echo $show_locations ? '' : 'display: none;'; ?>">
         <h3>Beliebte Locations Sektion (Popular Locations)</h3>
         <p class="helper-text">Ziehen Sie Collections, um die Reihenfolge zu ändern. Max. 6 Collections. <span class="collection-count" id="locations-count">(<?php echo count( $selected_locations ); ?>/6)</span></p>
 
@@ -1213,19 +1548,99 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
                 </ul>
             </div>
         </div>
+        </div> <!-- End locations-selection-section -->
 
         <script>
         jQuery(document).ready(function($) {
             // Make lists sortable
-            $('#selected-event-types, #selected-locations').sortable({
+            $('#selected-event-types, #selected-locations, #selected-top-hotels').sortable({
                 handle: '.drag-handle',
                 opacity: 0.8,
                 cursor: 'move',
                 update: function(event, ui) {
-                    updateHiddenInput($(this));
+                    if ($(this).attr('id') === 'selected-top-hotels') {
+                        updateHotelsInput($(this));
+                        toggleTopHotelsSection();
+                    } else {
+                        updateHiddenInput($(this));
+                    }
+                }
+            });
+
+            // Toggle sections based on checkboxes
+            $('#show_top_hotels_section').on('change', function() {
+                toggleTopHotelsSection();
+                // Toggle filter tabs group visibility
+                if ($(this).is(':checked')) {
+                    $('#top-hotels-filter-tabs-group').slideDown(200);
+                } else {
+                    $('#top-hotels-filter-tabs-group').slideUp(200);
+                }
+            });
+
+            $('#show_event_types_section').on('change', function() {
+                if ($(this).is(':checked')) {
+                    $('#event-types-selection-section').slideDown(200);
+                } else {
+                    $('#event-types-selection-section').slideUp(200);
+                }
+            });
+
+            $('#show_locations_section').on('change', function() {
+                if ($(this).is(':checked')) {
+                    $('#locations-selection-section').slideDown(200);
+                } else {
+                    $('#locations-selection-section').slideUp(200);
+                }
+            });
+            
+            // Toggle filter tab selectors
+            $('#show_top_hotels_tab').on('change', function() {
+                if ($(this).is(':checked')) {
+                    $('#top-hotels-tab-selector').slideDown(200);
+                } else {
+                    $('#top-hotels-tab-selector').slideUp(200);
+                }
+            });
+            
+            $('#show_theme_filter_tab').on('change', function() {
+                if ($(this).is(':checked')) {
+                    $('#theme-tab-selector').slideDown(200);
+                } else {
+                    $('#theme-tab-selector').slideUp(200);
+                }
+            });
+            
+            $('#show_location_filter_tab').on('change', function() {
+                if ($(this).is(':checked')) {
+                    $('#location-tab-selector').slideDown(200);
+                } else {
+                    $('#location-tab-selector').slideUp(200);
+                }
+            });
+            
+            // Make new lists sortable
+            $('#selected-top-hotels-tab-hotels, #selected-theme-tab-collections').sortable({
+                handle: 'span',
+                opacity: 0.8,
+                cursor: 'move',
+                update: function(event, ui) {
+                    updateSelectorInput($(this));
                 }
             });
         });
+
+        function toggleTopHotelsSection() {
+            var checkbox = jQuery('#show_top_hotels_section');
+            var section = jQuery('#top-hotels-selection-section');
+            var hasHotels = jQuery('#selected-top-hotels li').length > 0;
+            
+            if (checkbox.is(':checked') && hasHotels) {
+                section.slideDown(200);
+            } else {
+                section.slideUp(200);
+            }
+        }
 
         function updateHiddenInput(list) {
             var ids = [];
@@ -1287,6 +1702,201 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
             li.remove();
             updateHiddenInput(selectedList);
         }
+
+        function updateHotelsInput(list) {
+            var ids = [];
+            list.find('li').each(function() {
+                ids.push(jQuery(this).data('id'));
+            });
+            jQuery('#top-hotels-input').val(ids.join(','));
+            jQuery('#top-hotels-count').text('(' + ids.length + ')');
+        }
+
+        function addHotel(button) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('.collection-item-handle span').text();
+
+            var selectedList = jQuery('#selected-top-hotels');
+
+            // Add to selected
+            var newLi = '<li data-id="' + id + '">' +
+                '<div class="collection-item-handle">' +
+                '<span class="drag-handle">⋮⋮</span>' +
+                '<span>' + title + '</span>' +
+                '</div>' +
+                '<button type="button" class="remove-btn" onclick="removeHotel(this)">×</button>' +
+                '</li>';
+
+            selectedList.append(newLi);
+            li.remove();
+            updateHotelsInput(selectedList);
+            toggleTopHotelsSection();
+        }
+
+        function removeHotel(button) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('.collection-item-handle span:last').text();
+
+            var availableList = jQuery('#available-top-hotels');
+            var selectedList = jQuery('#selected-top-hotels');
+
+            // Add back to available
+            var newLi = '<li data-id="' + id + '" data-title="' + title.toLowerCase() + '">' +
+                '<div class="collection-item-handle">' +
+                '<span>' + title + '</span>' +
+                '</div>' +
+                '<button type="button" class="add-btn" onclick="addHotel(this)">+</button>' +
+                '</li>';
+
+            availableList.append(newLi);
+            li.remove();
+            updateHotelsInput(selectedList);
+            toggleTopHotelsSection();
+        }
+
+        function filterHotels(searchTerm) {
+            var searchLower = searchTerm.toLowerCase();
+            jQuery('#available-top-hotels li').each(function() {
+                var title = jQuery(this).data('title') || jQuery(this).find('.collection-item-handle span').text().toLowerCase();
+                if (title.indexOf(searchLower) !== -1) {
+                    jQuery(this).show();
+                } else {
+                    jQuery(this).hide();
+                }
+            });
+        }
+        
+        // New functions for new selectors
+        function updateSelectorInput(list) {
+            var ids = [];
+            list.find('li').each(function() {
+                ids.push(jQuery(this).data('id'));
+            });
+            
+            var listId = list.attr('id');
+            var inputId = '';
+            if (listId === 'selected-top-hotels-tab-hotels') {
+                inputId = 'top-hotels-tab-hotels-input';
+            } else if (listId === 'selected-theme-tab-collections') {
+                inputId = 'theme-tab-collections-input';
+            }
+            
+            if (inputId) {
+                jQuery('#' + inputId).val(ids.join(','));
+            }
+        }
+        
+        function addHotelToList(button, type) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('span').first().text();
+            
+            var selectedList = jQuery('#selected-top-hotels-tab-hotels');
+            var availableList = jQuery('#available-top-hotels-tab-hotels');
+            
+            // Add to selected
+            var newLi = '<li data-id="' + id + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                '<span style="cursor: move;">⋮⋮</span>' +
+                '<span style="flex: 1; margin: 0 10px;">' + title + '</span>' +
+                '<button type="button" class="remove-btn" onclick="removeHotelFromList(this, \'' + type + '\')" style="padding: 2px 6px; font-size: 16px;">×</button>' +
+                '</div>' +
+                '</li>';
+            
+            selectedList.append(newLi);
+            li.remove();
+            updateSelectorInput(selectedList);
+        }
+        
+        function removeHotelFromList(button, type) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('span').eq(1).text();
+            
+            var selectedList = jQuery('#selected-top-hotels-tab-hotels');
+            var availableList = jQuery('#available-top-hotels-tab-hotels');
+            
+            // Add back to available
+            var newLi = '<li data-id="' + id + '" data-title="' + title.toLowerCase() + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                '<span style="flex: 1;">' + title + '</span>' +
+                '<button type="button" class="add-btn" onclick="addHotelToList(this, \'' + type + '\')" style="padding: 2px 8px; font-size: 14px;">+</button>' +
+                '</div>' +
+                '</li>';
+            
+            availableList.append(newLi);
+            li.remove();
+            updateSelectorInput(selectedList);
+        }
+        
+        function addCollectionToList(button, type) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('span').first().text();
+            
+            var selectedList = jQuery('#selected-theme-tab-collections');
+            var availableList = jQuery('#available-theme-tab-collections');
+            
+            // Add to selected
+            var newLi = '<li data-id="' + id + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                '<span style="cursor: move;">⋮⋮</span>' +
+                '<span style="flex: 1; margin: 0 10px;">' + title + '</span>' +
+                '<button type="button" class="remove-btn" onclick="removeCollectionFromList(this, \'' + type + '\')" style="padding: 2px 6px; font-size: 16px;">×</button>' +
+                '</div>' +
+                '</li>';
+            
+            selectedList.append(newLi);
+            li.remove();
+            updateSelectorInput(selectedList);
+        }
+        
+        function removeCollectionFromList(button, type) {
+            var li = jQuery(button).closest('li');
+            var id = li.data('id');
+            var title = li.find('span').eq(1).text();
+            
+            var selectedList = jQuery('#selected-theme-tab-collections');
+            var availableList = jQuery('#available-theme-tab-collections');
+            
+            // Add back to available
+            var newLi = '<li data-id="' + id + '" data-title="' + title.toLowerCase() + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                '<span style="flex: 1;">' + title + '</span>' +
+                '<button type="button" class="add-btn" onclick="addCollectionToList(this, \'' + type + '\')" style="padding: 2px 8px; font-size: 14px;">+</button>' +
+                '</div>' +
+                '</li>';
+            
+            availableList.append(newLi);
+            li.remove();
+            updateSelectorInput(selectedList);
+        }
+        
+        function filterHotelList(searchTerm, type) {
+            var searchLower = searchTerm.toLowerCase();
+            jQuery('#available-top-hotels-tab-hotels li').each(function() {
+                var title = jQuery(this).data('title') || jQuery(this).find('span').first().text().toLowerCase();
+                if (title.indexOf(searchLower) !== -1) {
+                    jQuery(this).show();
+                } else {
+                    jQuery(this).hide();
+                }
+            });
+        }
+        
+        function filterCollectionList(searchTerm, type) {
+            var searchLower = searchTerm.toLowerCase();
+            jQuery('#available-theme-tab-collections li').each(function() {
+                var title = jQuery(this).data('title') || jQuery(this).find('span').first().text().toLowerCase();
+                if (title.indexOf(searchLower) !== -1) {
+                    jQuery(this).show();
+                } else {
+                    jQuery(this).hide();
+                }
+            });
+        }
         </script>
     </div>
     <?php
@@ -1328,6 +1938,30 @@ function seminargo_save_homepage_collections_meta( $post_id ) {
         delete_post_meta( $post_id, 'popular_location_collections' );
     }
 
+    // Save top hotels (ordered)
+    if ( isset( $_POST['top_hotels_ordered'] ) && ! empty( $_POST['top_hotels_ordered'] ) ) {
+        $top_hotels = sanitize_text_field( $_POST['top_hotels_ordered'] );
+        update_post_meta( $post_id, 'top_hotels_ordered', $top_hotels );
+    } else {
+        delete_post_meta( $post_id, 'top_hotels_ordered' );
+    }
+    
+    // Save top hotels tab hotels (ordered)
+    if ( isset( $_POST['top_hotels_tab_hotels_ordered'] ) && ! empty( $_POST['top_hotels_tab_hotels_ordered'] ) ) {
+        $top_hotels_tab_hotels = sanitize_text_field( $_POST['top_hotels_tab_hotels_ordered'] );
+        update_post_meta( $post_id, 'top_hotels_tab_hotels_ordered', $top_hotels_tab_hotels );
+    } else {
+        delete_post_meta( $post_id, 'top_hotels_tab_hotels_ordered' );
+    }
+    
+    // Save theme tab collections (ordered)
+    if ( isset( $_POST['theme_tab_collections_ordered'] ) && ! empty( $_POST['theme_tab_collections_ordered'] ) ) {
+        $theme_tab_collections = sanitize_text_field( $_POST['theme_tab_collections_ordered'] );
+        update_post_meta( $post_id, 'theme_tab_collections_ordered', $theme_tab_collections );
+    } else {
+        delete_post_meta( $post_id, 'theme_tab_collections_ordered' );
+    }
+
     // Save section visibility settings (save as '1' or '0')
     update_post_meta( $post_id, 'show_top_hotels_section', isset( $_POST['show_top_hotels_section'] ) ? '1' : '0' );
     update_post_meta( $post_id, 'show_event_types_section', isset( $_POST['show_event_types_section'] ) ? '1' : '0' );
@@ -1338,6 +1972,14 @@ function seminargo_save_homepage_collections_meta( $post_id ) {
     update_post_meta( $post_id, 'show_theme_filter_tab', isset( $_POST['show_theme_filter_tab'] ) ? '1' : '0' );
     update_post_meta( $post_id, 'show_location_filter_tab', isset( $_POST['show_location_filter_tab'] ) ? '1' : '0' );
 
+    // Save hero section settings
+    if ( isset( $_POST['hero_h1'] ) ) {
+        update_post_meta( $post_id, 'hero_h1', sanitize_text_field( $_POST['hero_h1'] ) );
+    }
+    if ( isset( $_POST['hero_description'] ) ) {
+        update_post_meta( $post_id, 'hero_description', sanitize_text_field( $_POST['hero_description'] ) );
+    }
+
     // Save hero CTA text settings
     if ( isset( $_POST['hero_cta_title'] ) ) {
         update_post_meta( $post_id, 'hero_cta_title', sanitize_text_field( $_POST['hero_cta_title'] ) );
@@ -1345,5 +1987,68 @@ function seminargo_save_homepage_collections_meta( $post_id ) {
     if ( isset( $_POST['hero_cta_subtitle'] ) ) {
         update_post_meta( $post_id, 'hero_cta_subtitle', sanitize_text_field( $_POST['hero_cta_subtitle'] ) );
     }
+    if ( isset( $_POST['hero_background_image'] ) ) {
+        update_post_meta( $post_id, 'hero_background_image', esc_url_raw( $_POST['hero_background_image'] ) );
+    }
+    if ( isset( $_POST['hero_button_text'] ) ) {
+        update_post_meta( $post_id, 'hero_button_text', sanitize_text_field( $_POST['hero_button_text'] ) );
+    }
+    if ( isset( $_POST['hero_button_link'] ) ) {
+        $button_link = sanitize_text_field( $_POST['hero_button_link'] );
+        // Allow full URLs, internal paths, hash anchors, or empty
+        // Use esc_url_raw for full URLs, but preserve internal paths and hash anchors
+        if ( ! empty( $button_link ) && ( strpos( $button_link, 'http://' ) === 0 || strpos( $button_link, 'https://' ) === 0 ) ) {
+            update_post_meta( $post_id, 'hero_button_link', esc_url_raw( $button_link ) );
+        } else {
+            // For internal paths, hash anchors, or empty - just sanitize as text
+            update_post_meta( $post_id, 'hero_button_link', $button_link );
+        }
+    }
 }
 add_action( 'save_post', 'seminargo_save_homepage_collections_meta' );
+
+/**
+ * Enqueue admin scripts for homepage meta box
+ */
+function seminargo_enqueue_homepage_admin_scripts( $hook ) {
+    global $post_type;
+
+    // Only enqueue on page edit screens
+    if ( ( $hook === 'post.php' || $hook === 'post-new.php' ) && $post_type === 'page' ) {
+        wp_enqueue_media();
+
+        wp_add_inline_script( 'jquery', '
+            jQuery(document).ready(function($) {
+                // Media uploader for hero background image
+                var heroBackgroundMediaUploader;
+                $("#upload_hero_background_image").on("click", function(e) {
+                    e.preventDefault();
+                    if (heroBackgroundMediaUploader) {
+                        heroBackgroundMediaUploader.open();
+                        return;
+                    }
+                    heroBackgroundMediaUploader = wp.media({
+                        title: "Hintergrundbild auswählen",
+                        button: { text: "Bild verwenden" },
+                        multiple: false
+                    });
+                    heroBackgroundMediaUploader.on("select", function() {
+                        var attachment = heroBackgroundMediaUploader.state().get("selection").first().toJSON();
+                        $("#hero_background_image").val(attachment.url);
+                        $(".hero-background-image-preview").html("<img src=\"" + attachment.url + "\" style=\"max-width: 400px; height: auto; border-radius: 8px; border: 1px solid #ddd;\">");
+                        $("#remove_hero_background_image").show();
+                    });
+                    heroBackgroundMediaUploader.open();
+                });
+
+                $("#remove_hero_background_image").on("click", function() {
+                    var defaultImage = "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&h=600&fit=crop";
+                    $("#hero_background_image").val(defaultImage);
+                    $(".hero-background-image-preview").html("<img src=\"" + defaultImage + "\" style=\"max-width: 400px; height: auto; border-radius: 8px; border: 1px solid #ddd;\">");
+                    $(this).hide();
+                });
+            });
+        ' );
+    }
+}
+add_action( 'admin_enqueue_scripts', 'seminargo_enqueue_homepage_admin_scripts' );

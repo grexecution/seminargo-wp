@@ -60,20 +60,12 @@ class Seminargo_Hotel_Importer {
         // Add meta boxes for hotel edit page
         add_action( 'add_meta_boxes', [ $this, 'add_hotel_meta_boxes' ] );
 
-        // Save featured meta
-        add_action( 'save_post_hotel', [ $this, 'save_featured_meta' ] );
-
-        // Add featured column to hotels list
-        add_filter( 'manage_hotel_posts_columns', [ $this, 'add_featured_column' ] );
-        add_action( 'manage_hotel_posts_custom_column', [ $this, 'render_featured_column' ], 10, 2 );
+        // Add custom columns to hotels list
+        add_filter( 'manage_hotel_posts_columns', [ $this, 'add_hotel_columns' ] );
+        add_action( 'manage_hotel_posts_custom_column', [ $this, 'render_hotel_column' ], 10, 2 );
 
         // Column styles
         add_action( 'admin_head', [ $this, 'hotel_column_styles' ] );
-
-        // Quick edit support
-        add_action( 'quick_edit_custom_box', [ $this, 'quick_edit_featured' ], 10, 2 );
-        add_action( 'save_post_hotel', [ $this, 'save_quick_edit_featured' ] );
-        add_action( 'admin_footer-edit.php', [ $this, 'quick_edit_javascript' ] );
     }
 
     /**
@@ -172,92 +164,14 @@ class Seminargo_Hotel_Importer {
                 .column-hotel_rating { width: 80px; }
                 .column-hotel_rooms { width: 60px; }
                 .column-hotel_capacity { width: 90px; }
-                .column-featured_landing { width: 90px; }
             </style>';
         }
     }
 
     /**
-     * Add featured field to quick edit
-     */
-    public function quick_edit_featured( $column_name, $post_type ) {
-        if ( $post_type !== 'hotel' || $column_name !== 'featured_landing' ) {
-            return;
-        }
-        ?>
-        <fieldset class="inline-edit-col-right">
-            <div class="inline-edit-col">
-                <label class="inline-edit-featured">
-                    <input type="checkbox" name="featured_on_landing" value="1">
-                    <span class="checkbox-title">Auf Startseite anzeigen</span>
-                </label>
-            </div>
-        </fieldset>
-        <?php
-    }
-
-    /**
-     * Save quick edit featured field
-     */
-    public function save_quick_edit_featured( $post_id ) {
-        // Skip if not quick edit or bulk edit
-        if ( ! isset( $_POST['_inline_edit'] ) && ! isset( $_POST['hotel_featured_nonce_field'] ) ) {
-            return;
-        }
-
-        // Check inline edit nonce
-        if ( isset( $_POST['_inline_edit'] ) && ! wp_verify_nonce( $_POST['_inline_edit'], 'inlineeditnonce' ) ) {
-            return;
-        }
-
-        // Skip if regular save (handled by other function)
-        if ( isset( $_POST['hotel_featured_nonce_field'] ) ) {
-            return;
-        }
-
-        if ( isset( $_POST['featured_on_landing'] ) && $_POST['featured_on_landing'] === '1' ) {
-            update_post_meta( $post_id, 'featured_on_landing', '1' );
-        } else {
-            delete_post_meta( $post_id, 'featured_on_landing' );
-        }
-    }
-
-    /**
-     * JavaScript for quick edit to populate checkbox
-     */
-    public function quick_edit_javascript() {
-        global $typenow;
-        if ( $typenow !== 'hotel' ) {
-            return;
-        }
-        ?>
-        <script>
-        jQuery(function($) {
-            var $inlineEdit = inlineEditPost.edit;
-            inlineEditPost.edit = function(id) {
-                $inlineEdit.apply(this, arguments);
-
-                var postId = 0;
-                if (typeof(id) === 'object') {
-                    postId = parseInt(this.getId(id));
-                }
-
-                if (postId > 0) {
-                    var $row = $('#post-' + postId);
-                    var featured = $row.find('.column-featured_landing').text().trim();
-                    var isChecked = featured.indexOf('Aktiv') !== -1;
-                    $('input[name="featured_on_landing"]', '.inline-edit-row').prop('checked', isChecked);
-                }
-            };
-        });
-        </script>
-        <?php
-    }
-
-    /**
      * Add custom columns to hotels list
      */
-    public function add_featured_column( $columns ) {
+    public function add_hotel_columns( $columns ) {
         $new_columns = [];
         $new_columns['cb'] = $columns['cb'];
         $new_columns['hotel_image'] = 'Bild';
@@ -266,7 +180,6 @@ class Seminargo_Hotel_Importer {
         $new_columns['hotel_rating'] = 'Bewertung';
         $new_columns['hotel_rooms'] = 'Räume';
         $new_columns['hotel_capacity'] = 'Kapazität';
-        $new_columns['featured_landing'] = 'Startseite';
         $new_columns['date'] = $columns['date'];
         return $new_columns;
     }
@@ -331,44 +244,9 @@ class Seminargo_Hotel_Importer {
                     echo '<span style="color: #999;">—</span>';
                 }
                 break;
-
-            case 'featured_landing':
-                $featured = get_post_meta( $post_id, 'featured_on_landing', true );
-                if ( $featured === '1' ) {
-                    echo '<span style="display: inline-block; padding: 3px 8px; background: #4caf50; color: white; border-radius: 4px; font-size: 11px; font-weight: 600;">⭐ Aktiv</span>';
-                } else {
-                    echo '<span style="color: #999;">—</span>';
-                }
-                break;
         }
     }
 
-    /**
-     * Save featured meta field
-     */
-    public function save_featured_meta( $post_id ) {
-        // Check nonce
-        if ( ! isset( $_POST['hotel_featured_nonce_field'] ) || ! wp_verify_nonce( $_POST['hotel_featured_nonce_field'], 'hotel_featured_nonce' ) ) {
-            return;
-        }
-
-        // Check autosave
-        if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
-            return;
-        }
-
-        // Check permissions
-        if ( ! current_user_can( 'edit_post', $post_id ) ) {
-            return;
-        }
-
-        // Save or delete the meta
-        if ( isset( $_POST['featured_on_landing'] ) && $_POST['featured_on_landing'] === '1' ) {
-            update_post_meta( $post_id, 'featured_on_landing', '1' );
-        } else {
-            delete_post_meta( $post_id, 'featured_on_landing' );
-        }
-    }
 
     /**
      * Add custom cron interval
@@ -514,63 +392,8 @@ class Seminargo_Hotel_Importer {
             'default'
         );
 
-        add_meta_box(
-            'hotel_featured',
-            '⭐ ' . __( 'Landingpage', 'seminargo' ),
-            [ $this, 'render_featured_meta_box' ],
-            'hotel',
-            'side',
-            'high'
-        );
     }
 
-    /**
-     * Render Featured meta box
-     */
-    public function render_featured_meta_box( $post ) {
-        $featured = get_post_meta( $post->ID, 'featured_on_landing', true );
-        wp_nonce_field( 'hotel_featured_nonce', 'hotel_featured_nonce_field' );
-        ?>
-        <style>
-            .featured-toggle {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 12px;
-                background: <?php echo $featured === '1' ? '#e8f5e9' : '#f5f5f5'; ?>;
-                border-radius: 8px;
-                border: 2px solid <?php echo $featured === '1' ? '#4caf50' : '#ddd'; ?>;
-            }
-            .featured-toggle input[type="checkbox"] {
-                width: 20px;
-                height: 20px;
-                cursor: pointer;
-            }
-            .featured-toggle .toggle-label {
-                font-weight: 600;
-                color: <?php echo $featured === '1' ? '#2e7d32' : '#666'; ?>;
-            }
-            .featured-toggle .toggle-status {
-                margin-left: auto;
-                padding: 4px 10px;
-                border-radius: 12px;
-                font-size: 11px;
-                font-weight: 600;
-                text-transform: uppercase;
-                background: <?php echo $featured === '1' ? '#4caf50' : '#999'; ?>;
-                color: white;
-            }
-        </style>
-        <div class="featured-toggle">
-            <input type="checkbox" name="featured_on_landing" id="featured_on_landing" value="1" <?php checked( $featured, '1' ); ?>>
-            <label for="featured_on_landing" class="toggle-label"><?php esc_html_e( 'Auf Startseite anzeigen', 'seminargo' ); ?></label>
-            <span class="toggle-status"><?php echo $featured === '1' ? esc_html__( 'Aktiv', 'seminargo' ) : esc_html__( 'Inaktiv', 'seminargo' ); ?></span>
-        </div>
-        <p class="description" style="margin-top: 10px; color: #666;">
-            <?php esc_html_e( 'Zeigt dieses Hotel im Bereich "Top-Veranstaltungsorte" auf der Startseite.', 'seminargo' ); ?>
-        </p>
-        <?php
-    }
 
     /**
      * Render Basic Info meta box
@@ -2230,9 +2053,15 @@ class Seminargo_Hotel_Importer {
                 // #endregion
                 
                 // WP Engine enforces 60-second execution limit
-                // NEW APPROACH: Process ONE image per request to avoid timeout
-                // This way each request is fast (< 5 seconds) and we never hit the 60s limit
+                // OPTIMIZED: Process MULTIPLE images per request (3-5 images) to speed up import
+                // Each image takes ~5-10 seconds, so we can safely process 3-5 per request
                 $timeout_threshold = 50; // Exit at 50 seconds to leave 10s buffer
+                $images_per_request = 3; // Process 3 images per request (can be increased if stable)
+                
+                // CRITICAL: Calculate max time per image to prevent timeout
+                // With 50s threshold and 3 images, we have ~16s per image (with buffer)
+                // But account for overhead (DB queries, file operations, etc.) - use 12s per image max
+                $max_time_per_image = 12; // Maximum seconds allowed per image download/processing
                 
                 // Check if we're resuming a partially processed hotel
                 $current_hotel_id = $progress['current_hotel_id'] ?? null;
@@ -2307,80 +2136,142 @@ class Seminargo_Hotel_Importer {
                 // Process ONE image for the current hotel
                 if ( $hotel && ! empty( $hotel->medias ) ) {
                     try {
-                        // Find WordPress post for this hotel
-                        $query_start = microtime( true );
-                        $args = [
-                            'post_type' => 'hotel',
-                            'post_status' => [ 'publish', 'draft' ],
-                            'meta_query' => [
-                                [ 'key' => 'hotel_id', 'value' => $hotel->id ],
-                            ],
-                            'posts_per_page' => 1,
-                            'fields' => 'ids',
-                        ];
-                        $query = new WP_Query( $args );
-                        $query_time = ( microtime( true ) - $query_start ) * 1000;
+                        // OPTIMIZATION: Cache hotel post_id lookup (only query once per hotel, not per image)
+                        static $hotel_post_cache = [];
+                        $hotel_id_str = strval( $hotel->id );
                         
-                        // #region agent log
-                        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
-                        @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H3', 'location' => 'process_single_batch:phase2_query_complete', 'message' => 'WP_Query completed', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown', 'query_time_ms' => round( $query_time, 2 ), 'found_posts' => $query->found_posts ?? 0, 'post_count' => $query->post_count ?? 0 ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
-                        // #endregion
+                        if ( ! isset( $hotel_post_cache[ $hotel_id_str ] ) ) {
+                            // Find WordPress post for this hotel (only if not cached)
+                            $query_start = microtime( true );
+                            // OPTIMIZATION: Use direct meta query instead of WP_Query for better performance
+                            global $wpdb;
+                            $post_id = $wpdb->get_var( $wpdb->prepare(
+                                "SELECT p.ID FROM {$wpdb->posts} p
+                                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                                WHERE p.post_type = 'hotel'
+                                AND p.post_status IN ('publish', 'draft')
+                                AND pm.meta_key = 'hotel_id'
+                                AND pm.meta_value = %s
+                                LIMIT 1",
+                                $hotel_id_str
+                            ) );
+                            $query_time = ( microtime( true ) - $query_start ) * 1000;
+                            
+                            // Cache the result (even if null)
+                            $hotel_post_cache[ $hotel_id_str ] = $post_id ? intval( $post_id ) : null;
+                            
+                            // #region agent log
+                            $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+                            @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H3', 'location' => 'process_single_batch:phase2_query_complete', 'message' => 'Hotel post lookup completed', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown', 'query_time_ms' => round( $query_time, 2 ), 'post_id' => $post_id ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
+                            // #endregion
+                        } else {
+                            $post_id = $hotel_post_cache[ $hotel_id_str ];
+                        }
 
-                        if ( $query->have_posts() ) {
-                            $post_id = $query->posts[0];
+                        if ( $post_id ) {
                             $total_images = count( $hotel->medias );
                             
                             // #region agent log
                             $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
-                            @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H7', 'location' => 'process_single_batch:phase2_process_single_image', 'message' => 'Processing single image', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'image_index' => $current_image_index, 'total_images' => $total_images, 'elapsed_seconds' => time() - $request_start_time ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
+                            @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2,H7', 'location' => 'process_single_batch:phase2_process_images', 'message' => 'Processing images batch', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'image_index' => $current_image_index, 'total_images' => $total_images, 'images_per_request' => $images_per_request, 'elapsed_seconds' => time() - $request_start_time ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
                             // #endregion
                             
-                            // Process ONE image - wrapped in try-catch to ensure sync never crashes
-                            try {
-                                $image_result = $this->process_single_image( $post_id, $hotel, $current_image_index );
+                            // OPTIMIZATION: Batch-check existing images for fast skipping
+                            // This allows us to quickly skip through hotels where all images already exist
+                            // OPTIMIZED: Only check images we're about to process (not all remaining)
+                            $batch_check_start = microtime( true );
+                            $end_index = min( $current_image_index + $images_per_request, $total_images );
+                            $existing_images_map = $this->batch_check_existing_images( $hotel, $current_image_index, $end_index );
+                            $batch_check_time = ( microtime( true ) - $batch_check_start ) * 1000;
+                            
+                            if ( $batch_check_time > 100 ) {
+                                $this->log( 'info', "⚡ Batch-checked {$total_images} images in " . round( $batch_check_time, 2 ) . "ms", $hotel->businessName ?? '' );
+                            }
+                            
+                            // Process MULTIPLE images per request (optimized for speed)
+                            $images_processed_this_request = 0;
+                            $current_idx = $current_image_index;
+                            
+                            while ( $current_idx < $total_images && $images_processed_this_request < $images_per_request ) {
+                                // Check timeout before each image
+                                $elapsed = time() - $request_start_time;
+                                $time_remaining = $timeout_threshold - $elapsed;
                                 
-                                // Log error if image failed but continue
-                                if ( ! empty( $image_result['error'] ) ) {
-                                    // Error already logged in process_single_image, just continue
+                                // CRITICAL: Don't start new image if we don't have enough time
+                                if ( $elapsed > $timeout_threshold ) {
+                                    $this->log( 'info', "⏱️ Timeout threshold reached ({$elapsed}s) - stopping at image {$current_idx}", $hotel->businessName ?? '' );
+                                    break;
                                 }
                                 
-                                // Update progress - ALWAYS move to next image even on error
-                                $progress['current_image_index'] = $image_result['next_index'];
+                                // CRITICAL: Don't start image if remaining time is less than max_time_per_image
+                                if ( $time_remaining < $max_time_per_image ) {
+                                    $this->log( 'info', "⏱️ Insufficient time remaining ({$time_remaining}s < {$max_time_per_image}s) - stopping at image {$current_idx}", $hotel->businessName ?? '' );
+                                    break;
+                                }
                                 
-                                // If all images for this hotel are done, move to next hotel
-                                if ( $image_result['next_index'] >= $total_images ) {
-                                    $progress['images_processed']++;
-                                    $progress['current_hotel_id'] = null;
-                                    $progress['current_image_index'] = 0;
+                                // Process ONE image - wrapped in try-catch to ensure sync never crashes
+                                // Pass the existing_images_map for fast lookup and remaining time budget
+                                try {
+                                    $image_start_time = time();
+                                    $image_result = $this->process_single_image( $post_id, $hotel, $current_idx, $existing_images_map, $time_remaining );
                                     
-                                    // Move to next hotel in batch
-                                    $progress['offset']++;
+                                    // CRITICAL: Check timeout AFTER each image to prevent exceeding threshold
+                                    $image_elapsed = time() - $image_start_time;
+                                    $total_elapsed = time() - $request_start_time;
+                                    if ( $total_elapsed > $timeout_threshold ) {
+                                        $this->log( 'info', "⏱️ Timeout threshold exceeded after image ({$total_elapsed}s) - stopping", $hotel->businessName ?? '' );
+                                        break;
+                                    }
+                                    
+                                    // Log error if image failed but continue
+                                    if ( ! empty( $image_result['error'] ) ) {
+                                        // Error already logged in process_single_image, just continue
+                                    }
+                                    
+                                    $images_processed_this_request++;
+                                    $current_idx = $image_result['next_index'];
+                                    
+                                    // If all images for this hotel are done, move to next hotel
+                                    if ( $image_result['next_index'] >= $total_images ) {
+                                        $progress['images_processed']++;
+                                        $progress['current_hotel_id'] = null;
+                                        $progress['current_image_index'] = 0;
+                                        
+                                        // Move to next hotel in batch
+                                        $progress['offset']++;
+                                        
+                                        // #region agent log
+                                        $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
+                                        @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2', 'location' => 'process_single_batch:phase2_hotel_complete', 'message' => 'Hotel images complete - moving to next', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown', 'total_images' => $total_images, 'images_processed_count' => $progress['images_processed'] ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
+                                        // #endregion
+                                        
+                                        break; // Hotel complete, exit loop
+                                    }
+                                } catch ( Exception $e ) {
+                                    // CRITICAL: Even if process_single_image throws an exception, continue to next image
+                                    $error_message = 'Fatal error processing image: ' . $e->getMessage();
+                                    $this->log( 'error', "❌ CRITICAL: {$error_message} - Continuing to next image", $hotel->businessName ?? '' );
+                                    
+                                    // Move to next image even on error
+                                    $current_idx++;
+                                    $images_processed_this_request++;
                                     
                                     // #region agent log
                                     $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
-                                    @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H2', 'location' => 'process_single_batch:phase2_hotel_complete', 'message' => 'Hotel images complete - moving to next', 'data' => [ 'hotel_id' => $hotel->id ?? 'unknown', 'total_images' => $total_images, 'images_processed_count' => $progress['images_processed'] ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
+                                    @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_single_batch:phase2_fatal_error', 'message' => 'Fatal error - continuing to next image', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'image_index' => $current_idx, 'error' => $error_message, 'trace' => $e->getTraceAsString() ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
                                     // #endregion
                                 }
-                            } catch ( Exception $e ) {
-                                // CRITICAL: Even if process_single_image throws an exception, continue to next image
-                                $error_message = 'Fatal error processing image: ' . $e->getMessage();
-                                $this->log( 'error', "❌ CRITICAL: {$error_message} - Continuing to next image", $hotel->businessName ?? '' );
-                                
-                                // #region agent log
-                                $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
-                                @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H4', 'location' => 'process_single_batch:phase2_fatal_error', 'message' => 'Fatal error - continuing to next image', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'image_index' => $current_image_index, 'error' => $error_message, 'trace' => $e->getTraceAsString() ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
-                                // #endregion
-                                
-                                // Move to next image to prevent infinite loop
-                                $progress['current_image_index'] = $current_image_index + 1;
-                                
-                                // If we've processed all images (or errored through all), move to next hotel
-                                if ( $progress['current_image_index'] >= $total_images ) {
-                                    $progress['images_processed']++;
-                                    $progress['current_hotel_id'] = null;
-                                    $progress['current_image_index'] = 0;
-                                    $progress['offset']++;
-                                }
+                            }
+                            
+                            // Update progress with current index
+                            $progress['current_image_index'] = $current_idx;
+                            
+                            // If we've processed all images, move to next hotel
+                            if ( $current_idx >= $total_images ) {
+                                $progress['images_processed']++;
+                                $progress['current_hotel_id'] = null;
+                                $progress['current_image_index'] = 0;
+                                $progress['offset']++;
                             }
                         } else {
                             // Hotel post not found - skip this hotel
@@ -3567,14 +3458,78 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
+     * Batch check existing images for a hotel (optimization for fast skipping)
+     * @param object $hotel Hotel object from API
+     * @param int $start_index Starting image index
+     * @param int $total_images Total number of images
+     * @return array Map of image URLs to attachment IDs (if exists)
+     */
+    private function batch_check_existing_images( $hotel, $start_index, $total_images ) {
+        if ( empty( $hotel->medias ) ) {
+            return [];
+        }
+        
+        global $wpdb;
+        $existing_map = [];
+        $urls_to_check = [];
+        
+        // Collect all URLs to check (both encoded and original)
+        for ( $i = $start_index; $i < $total_images && $i < count( $hotel->medias ); $i++ ) {
+            $media = $hotel->medias[ $i ];
+            $image_url = $media->previewUrl ?? $media->url;
+            if ( empty( $image_url ) ) {
+                continue;
+            }
+            
+            $original_url = $image_url;
+            $encoded_url = $this->encode_image_url( $image_url );
+            
+            $urls_to_check[] = $encoded_url;
+            if ( $original_url !== $encoded_url ) {
+                $urls_to_check[] = $original_url;
+            }
+        }
+        
+        if ( empty( $urls_to_check ) ) {
+            return [];
+        }
+        
+        // OPTIMIZATION: Single SQL query to check all URLs at once
+        $placeholders = implode( ',', array_fill( 0, count( $urls_to_check ), '%s' ) );
+        $query = $wpdb->prepare(
+            "SELECT post_id, meta_value 
+            FROM {$wpdb->postmeta} 
+            WHERE meta_key = %s 
+            AND meta_value IN ($placeholders)",
+            array_merge( [ '_seminargo_source_url' ], $urls_to_check )
+        );
+        
+        $results = $wpdb->get_results( $query );
+        
+        // Build map: URL => attachment_id
+        foreach ( $results as $row ) {
+            $attachment_id = intval( $row->post_id );
+            // Verify it's actually an attachment
+            $post_type = get_post_type( $attachment_id );
+            if ( $post_type === 'attachment' ) {
+                $existing_map[ $row->meta_value ] = $attachment_id;
+            }
+        }
+        
+        return $existing_map;
+    }
+
+    /**
      * Process a single image for a hotel (one-by-one approach for WP Engine)
      * CRITICAL: This function is designed to NEVER crash the sync - all errors are caught and logged
      * @param int $post_id WordPress post ID
      * @param object $hotel Hotel object from API
      * @param int $image_index Index of the image to process (0-based)
+     * @param array $existing_images_map Optional: Pre-checked map of existing images (URL => attachment_id)
+     * @param int $time_budget Optional: Maximum seconds allowed for this image (prevents timeout)
      * @return array ['completed' => bool, 'next_index' => int, 'downloaded' => int, 'skipped' => int, 'error' => string|null]
      */
-    private function process_single_image( $post_id, $hotel, $image_index ) {
+    private function process_single_image( $post_id, $hotel, $image_index, $existing_images_map = null, $time_budget = null ) {
         // #region agent log
         $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
         @file_put_contents( $log_path, json_encode( [ 'sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'H1,H4', 'location' => 'process_single_image:entry', 'message' => 'process_single_image started', 'data' => [ 'post_id' => $post_id, 'hotel_id' => $hotel->id ?? 'unknown', 'image_index' => $image_index, 'total_images' => count( $hotel->medias ?? [] ) ], 'timestamp' => time() * 1000 ] ) . "\n", FILE_APPEND | LOCK_EX );
@@ -3604,22 +3559,52 @@ class Seminargo_Hotel_Importer {
             $original_url = $image_url;
             $image_url = $this->encode_image_url( $image_url );
             
-            // Check if image already exists
-            try {
-                $existing = get_posts( [
-                    'post_type'      => 'attachment',
-                    'meta_query'     => [
-                        [
-                            'key'   => '_seminargo_source_url',
-                            'value' => $image_url,
-                        ],
-                    ],
-                    'posts_per_page' => 1,
-                ] );
-            } catch ( Exception $e ) {
-                $error_message = 'Database query error: ' . $e->getMessage();
-                $this->log( 'error', "⚠️ Image {$image_index} error: {$error_message}", $hotel->businessName ?? '' );
-                return [ 'completed' => false, 'next_index' => $image_index + 1, 'downloaded' => 0, 'skipped' => 0, 'error' => $error_message ];
+            // Check if image already exists - use batch map if provided, otherwise query individually
+            $existing = null;
+            $attachment_id = null;
+            
+            if ( $existing_images_map !== null ) {
+                // OPTIMIZATION: Use pre-checked batch map (much faster)
+                if ( isset( $existing_images_map[ $image_url ] ) ) {
+                    $attachment_id = $existing_images_map[ $image_url ];
+                } elseif ( $original_url !== $image_url && isset( $existing_images_map[ $original_url ] ) ) {
+                    $attachment_id = $existing_images_map[ $original_url ];
+                }
+                
+                if ( $attachment_id ) {
+                    $existing = [ (object) [ 'ID' => $attachment_id ] ];
+                }
+            } else {
+                // Fallback: Individual query (slower but works if batch map not provided)
+                $urls_to_check = [ $image_url ]; // Encoded URL (primary)
+                if ( $original_url !== $image_url ) {
+                    $urls_to_check[] = $original_url; // Also check original URL
+                }
+                
+                try {
+                    global $wpdb;
+                    foreach ( $urls_to_check as $check_url ) {
+                        $attachment_id = $wpdb->get_var( $wpdb->prepare(
+                            "SELECT post_id FROM {$wpdb->postmeta} 
+                            WHERE meta_key = %s AND meta_value = %s 
+                            LIMIT 1",
+                            '_seminargo_source_url',
+                            $check_url
+                        ) );
+                        
+                        if ( $attachment_id ) {
+                            $post_type = get_post_type( $attachment_id );
+                            if ( $post_type === 'attachment' ) {
+                                $existing = [ (object) [ 'ID' => $attachment_id ] ];
+                                break;
+                            }
+                        }
+                    }
+                } catch ( Exception $e ) {
+                    $error_message = 'Database query error: ' . $e->getMessage();
+                    $this->log( 'error', "⚠️ Image {$image_index} error: {$error_message}", $hotel->businessName ?? '' );
+                    return [ 'completed' => false, 'next_index' => $image_index + 1, 'downloaded' => 0, 'skipped' => 0, 'error' => $error_message ];
+                }
             }
             
             if ( ! empty( $existing ) ) {
@@ -3630,10 +3615,30 @@ class Seminargo_Hotel_Importer {
                     
                     if ( ! $attachment_exists ) {
                         // Orphaned attachment - delete and re-download
+                        $this->log( 'info', "🗑️ Image {$image_index} orphaned (DB exists, file missing) - deleting and re-downloading", $hotel->businessName ?? '' );
                         wp_delete_attachment( $attachment_id, true );
                         $existing = [];
                     } else {
-                        // File exists - skip
+                        // File exists - verify it's attached to this hotel post
+                        $current_parent = wp_get_post_parent_id( $attachment_id );
+                        
+                        // If not attached to this hotel, attach it (but don't re-download)
+                        if ( $current_parent !== $post_id ) {
+                            wp_update_post( [
+                                'ID' => $attachment_id,
+                                'post_parent' => $post_id,
+                            ] );
+                            $this->log( 'info', "🔗 Image {$image_index} already exists, attached to hotel {$post_id}", $hotel->businessName ?? '' );
+                        } else {
+                            $this->log( 'info', "⏭️ Image {$image_index} already exists and attached - skipping", $hotel->businessName ?? '' );
+                        }
+                        
+                        // Update source URL to current encoded URL (in case it was stored with original URL)
+                        $stored_url = get_post_meta( $attachment_id, '_seminargo_source_url', true );
+                        if ( $stored_url !== $image_url ) {
+                            update_post_meta( $attachment_id, '_seminargo_source_url', $image_url );
+                        }
+                        
                         $skipped = 1;
                         $attachment_id = $existing[0]->ID;
                     }
@@ -3657,9 +3662,16 @@ class Seminargo_Hotel_Importer {
                 
                 foreach ( $download_urls as $try_url ) {
                     try {
-                        // Set a timeout for download_url (30 seconds max per image)
+                        // CRITICAL: Calculate dynamic timeout based on time budget to prevent exceeding threshold
+                        // If time_budget is provided, use it (minus 2s buffer for processing overhead)
+                        // Otherwise, use default 12s (matching max_time_per_image)
                         $download_start = time();
-                        $timeout = 30; // 30 second timeout per image download
+                        if ( $time_budget !== null && $time_budget > 0 ) {
+                            // Reserve 2 seconds for file operations, DB writes, etc.
+                            $timeout = max( 5, min( $time_budget - 2, 12 ) ); // Min 5s, max 12s, but respect budget
+                        } else {
+                            $timeout = 12; // Default: 12 second timeout per image download (safer for batch processing)
+                        }
                         
                         // Use wp_remote_get with timeout instead of download_url for better control
                         $response = wp_remote_get( $try_url, [
@@ -3828,24 +3840,38 @@ class Seminargo_Hotel_Importer {
             }
             
             // Set featured image on first image - with error handling
+            // Only set if we don't already have a featured image
             if ( $image_index === 0 && isset( $attachment_id ) ) {
                 try {
-                    set_post_thumbnail( $post_id, $attachment_id );
+                    $current_thumbnail = get_post_thumbnail_id( $post_id );
+                    if ( empty( $current_thumbnail ) ) {
+                        set_post_thumbnail( $post_id, $attachment_id );
+                        $this->log( 'info', "⭐ Image {$image_index} set as featured image", $hotel->businessName ?? '' );
+                    }
                 } catch ( Exception $e ) {
                     // Non-critical error - log but continue
                     $this->log( 'error', "⚠️ Failed to set featured image: " . $e->getMessage(), $hotel->businessName ?? '' );
                 }
             }
             
-            // Add to gallery - with error handling
+            // Add to gallery - with error handling (for both downloaded and skipped images)
             if ( isset( $attachment_id ) ) {
                 try {
-                    $gallery_ids = get_post_meta( $post_id, '_seminargo_gallery_ids', true );
+                    // Use the same meta key as process_hotel_images for consistency
+                    $gallery_ids = get_post_meta( $post_id, 'gallery', true );
                     if ( ! is_array( $gallery_ids ) ) {
                         $gallery_ids = [];
                     }
                     if ( ! in_array( $attachment_id, $gallery_ids ) ) {
                         $gallery_ids[] = $attachment_id;
+                        update_post_meta( $post_id, 'gallery', $gallery_ids );
+                        
+                        // Also update ACF field if available
+                        if ( function_exists( 'update_field' ) ) {
+                            update_field( 'gallery', $gallery_ids, $post_id );
+                        }
+                        
+                        // Also maintain the legacy meta key for backwards compatibility
                         update_post_meta( $post_id, '_seminargo_gallery_ids', $gallery_ids );
                     }
                 } catch ( Exception $e ) {

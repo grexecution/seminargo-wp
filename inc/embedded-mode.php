@@ -81,6 +81,12 @@ function seminargo_embedded_mode_styles() {
             .embedded-mode .breadcrumbs {
                 display: none;
             }
+
+            /* Hide booking card section (Interesse an diesem Hotel?) */
+            .embedded-mode .booking-card,
+            .embedded-mode #booking-form-section {
+                display: none !important;
+            }
         </style>
         <?php
     }
