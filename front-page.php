@@ -36,8 +36,8 @@ get_header(); ?>
                     <div class="search-widget-wrapper">
                         <div class="search-widget-wrapper-inner">
                             <div id="seminargo-widget"
-                                 data-platform-url="https://lister-staging.seminargo.com/"></div>
-                            <script src="https://platform-widget.dev.seminargo.eu/widget.js"></script>
+                                 data-platform-url="<?php echo esc_attr( seminargo_get_finder_url() ); ?>"></div>
+                            <script src="<?php echo esc_url( seminargo_get_platform_widget_js_url() ); ?>"></script>
                         </div>
                     </div>
                     <div class="search-widget-placeholder"></div>

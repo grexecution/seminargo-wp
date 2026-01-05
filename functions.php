@@ -21,6 +21,343 @@ define( 'SEMINARGO_ASSETS_URL', SEMINARGO_THEME_URL . '/assets/' );
 define( 'SEMINARGO_INC_PATH', SEMINARGO_THEME_PATH . '/inc/' );
 
 /**
+ * Environment Configuration
+ * 
+ * Get environment from database option (set via admin toggle)
+ * Falls back to 'production' if not set
+ */
+function seminargo_get_environment() {
+    $env = get_option( 'seminargo_environment', 'production' );
+    return in_array( $env, [ 'staging', 'production' ] ) ? $env : 'production';
+}
+
+// Define constant for backward compatibility
+if ( ! defined( 'SEMINARGO_ENV' ) ) {
+    define( 'SEMINARGO_ENV', seminargo_get_environment() );
+}
+
+/**
+ * Get API endpoint URL based on environment
+ * 
+ * @return string API GraphQL endpoint URL
+ */
+function seminargo_get_api_url() {
+    $env = seminargo_get_environment();
+    if ( $env === 'production' ) {
+        return 'https://lister.seminargo.com/pricelist/graphql';
+    } else {
+        return 'https://lister-staging.seminargo.com/pricelist/graphql';
+    }
+}
+
+/**
+ * Get Finder base URL based on environment
+ * 
+ * @return string Finder base URL
+ */
+function seminargo_get_finder_url() {
+    $env = seminargo_get_environment();
+    if ( $env === 'production' ) {
+        return 'https://lister.seminargo.com/';
+    } else {
+        return 'https://finder.dev.seminargo.eu/';
+    }
+}
+
+/**
+ * Get Platform Widget URL based on environment
+ * 
+ * @return string Platform widget base URL
+ */
+function seminargo_get_platform_widget_url() {
+    $env = seminargo_get_environment();
+    if ( $env === 'production' ) {
+        return 'https://platform-widget.prod.seminargo.eu/';
+    } else {
+        return 'https://platform-widget.dev.seminargo.eu/';
+    }
+}
+
+/**
+ * Get Platform Widget JS URL based on environment
+ * 
+ * @return string Platform widget JavaScript URL
+ */
+function seminargo_get_platform_widget_js_url() {
+    $env = seminargo_get_environment();
+    if ( $env === 'production' ) {
+        return 'https://platform-widget.prod.seminargo.eu/widget.js';
+    } else {
+        return 'https://platform-widget.dev.seminargo.eu/widget.js';
+    }
+}
+
+/**
+ * Add Environment Toggle to Admin Menu (removed - now on import page)
+ */
+
+/**
+ * Render Environment Toggle Page
+ */
+function seminargo_render_environment_toggle_page() {
+    // Handle AJAX toggle
+    if ( isset( $_POST['action'] ) && $_POST['action'] === 'seminargo_toggle_environment' && check_admin_referer( 'seminargo_environment_nonce' ) ) {
+        $env = sanitize_text_field( $_POST['environment'] );
+        if ( in_array( $env, [ 'staging', 'production' ] ) ) {
+            update_option( 'seminargo_environment', $env );
+            wp_send_json_success( [ 'message' => __( 'Environment updated successfully!', 'seminargo' ) ] );
+        }
+    }
+    
+    // Handle form submission (fallback)
+    if ( isset( $_POST['seminargo_environment'] ) && check_admin_referer( 'seminargo_environment_nonce' ) ) {
+        $env = sanitize_text_field( $_POST['seminargo_environment'] );
+        if ( in_array( $env, [ 'staging', 'production' ] ) ) {
+            update_option( 'seminargo_environment', $env );
+            echo '<div class="notice notice-success is-dismissible"><p><strong>' . esc_html__( 'Environment updated successfully!', 'seminargo' ) . '</strong></p></div>';
+        }
+    }
+    
+    $current_env = seminargo_get_environment();
+    $is_production = $current_env === 'production';
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e( 'Environment Settings', 'seminargo' ); ?></h1>
+        
+        <div class="card" style="max-width: 800px; margin-top: 20px;">
+            <h2 style="margin-top: 0;">🔀 <?php esc_html_e( 'Switch Environment', 'seminargo' ); ?></h2>
+            
+            <form method="post" action="" id="seminargo-environment-form">
+                <?php wp_nonce_field( 'seminargo_environment_nonce' ); ?>
+                <input type="hidden" name="action" value="seminargo_toggle_environment">
+                <input type="hidden" name="seminargo_environment" id="environment-value" value="<?php echo esc_attr( $current_env ); ?>">
+                
+                <div style="display: flex; align-items: center; gap: 30px; padding: 30px 0;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px; color: #f59e0b;">
+                            🟡 <?php esc_html_e( 'Staging', 'seminargo' ); ?>
+                        </div>
+                        <div style="font-size: 13px; color: #666;">
+                            <?php esc_html_e( 'Development & Testing', 'seminargo' ); ?>
+                        </div>
+                    </div>
+                    
+                    <div style="position: relative;">
+                        <label class="seminargo-toggle-switch" style="cursor: pointer;">
+                            <input type="checkbox" id="environment-toggle" <?php checked( $is_production ); ?>>
+                            <span class="seminargo-toggle-slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div style="flex: 1; text-align: right;">
+                        <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px; color: #10b981;">
+                            🟢 <?php esc_html_e( 'Production', 'seminargo' ); ?>
+                        </div>
+                        <div style="font-size: 13px; color: #666;">
+                            <?php esc_html_e( 'Live Site', 'seminargo' ); ?>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="toggle-status" style="padding: 15px; background: <?php echo $is_production ? '#d1fae5' : '#fef3c7'; ?>; border-radius: 6px; margin-top: 20px; text-align: center; font-weight: 600; color: <?php echo $is_production ? '#065f46' : '#92400e'; ?>;">
+                    <?php if ( $is_production ) : ?>
+                        🟢 <?php esc_html_e( 'Currently using PRODUCTION environment', 'seminargo' ); ?>
+                    <?php else : ?>
+                        🟡 <?php esc_html_e( 'Currently using STAGING environment', 'seminargo' ); ?>
+                    <?php endif; ?>
+                </div>
+                
+                <p class="submit" style="margin-top: 20px;">
+                    <button type="submit" class="button button-primary button-large" id="save-environment-btn">
+                        <?php esc_html_e( 'Save Changes', 'seminargo' ); ?>
+                    </button>
+                </p>
+            </form>
+        </div>
+        
+        <div class="card" style="max-width: 800px; margin-top: 20px;">
+            <h2 style="margin-top: 0;">📋 <?php esc_html_e( 'Current URLs', 'seminargo' ); ?></h2>
+            <table class="widefat">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'Service', 'seminargo' ); ?></th>
+                        <th><?php esc_html_e( 'URL', 'seminargo' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong><?php esc_html_e( 'API Endpoint', 'seminargo' ); ?></strong></td>
+                        <td><code><?php echo esc_html( seminargo_get_api_url() ); ?></code></td>
+                    </tr>
+                    <tr>
+                        <td><strong><?php esc_html_e( 'Finder Base URL', 'seminargo' ); ?></strong></td>
+                        <td><code><?php echo esc_html( seminargo_get_finder_url() ); ?></code></td>
+                    </tr>
+                    <tr>
+                        <td><strong><?php esc_html_e( 'Platform Widget URL', 'seminargo' ); ?></strong></td>
+                        <td><code><?php echo esc_html( seminargo_get_platform_widget_url() ); ?></code></td>
+                    </tr>
+                    <tr>
+                        <td><strong><?php esc_html_e( 'Platform Widget JS', 'seminargo' ); ?></strong></td>
+                        <td><code><?php echo esc_html( seminargo_get_platform_widget_js_url() ); ?></code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="card" style="max-width: 800px; margin-top: 20px; background: #fff3cd; border-left: 4px solid #ffc107;">
+            <h3 style="margin-top: 0;">⚠️ <?php esc_html_e( 'Important', 'seminargo' ); ?></h3>
+            <p><?php esc_html_e( 'Changing the environment will immediately affect all API calls and URLs throughout the site. Make sure you are switching to the correct environment for your current needs.', 'seminargo' ); ?></p>
+        </div>
+    </div>
+    
+    <style>
+        .wrap h1 {
+            margin-bottom: 20px;
+        }
+        .card {
+            background: #fff;
+            border: 1px solid #ccd0d4;
+            box-shadow: 0 1px 1px rgba(0,0,0,.04);
+            padding: 20px;
+        }
+        .card h2 {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        
+        /* Toggle Switch Styles */
+        .seminargo-toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 80px;
+            height: 40px;
+        }
+        
+        .seminargo-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .seminargo-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #f59e0b;
+            transition: .4s;
+            border-radius: 40px;
+        }
+        
+        .seminargo-toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 32px;
+            width: 32px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .seminargo-toggle-switch input:checked + .seminargo-toggle-slider {
+            background-color: #10b981;
+        }
+        
+        .seminargo-toggle-switch input:checked + .seminargo-toggle-slider:before {
+            transform: translateX(40px);
+        }
+        
+        .seminargo-toggle-switch input:focus + .seminargo-toggle-slider {
+            box-shadow: 0 0 1px #10b981;
+        }
+    </style>
+    
+    <script>
+    jQuery(document).ready(function($) {
+        $('#environment-toggle').on('change', function() {
+            var isProduction = $(this).is(':checked');
+            $('#environment-value').val(isProduction ? 'production' : 'staging');
+            
+            // Update status display
+            var statusDiv = $('#toggle-status');
+            if (isProduction) {
+                statusDiv.css({
+                    'background': '#d1fae5',
+                    'color': '#065f46'
+                }).html('🟢 <?php esc_html_e( 'Currently using PRODUCTION environment', 'seminargo' ); ?>');
+            } else {
+                statusDiv.css({
+                    'background': '#fef3c7',
+                    'color': '#92400e'
+                }).html('🟡 <?php esc_html_e( 'Currently using STAGING environment', 'seminargo' ); ?>');
+            }
+        });
+        
+        $('#seminargo-environment-form').on('submit', function(e) {
+            e.preventDefault();
+            
+            var form = $(this);
+            var submitBtn = $('#save-environment-btn');
+            var originalText = submitBtn.text();
+            
+            submitBtn.prop('disabled', true).text('<?php esc_html_e( 'Saving...', 'seminargo' ); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'seminargo_toggle_environment',
+                    environment: $('#environment-value').val(),
+                    _wpnonce: '<?php echo wp_create_nonce( 'seminargo_environment_nonce' ); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        submitBtn.text('<?php esc_html_e( 'Saved!', 'seminargo' ); ?>').css('background', '#10b981');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1000);
+                    } else {
+                        alert('Error: ' + (response.data && response.data.message ? response.data.message : 'Unknown error'));
+                        submitBtn.prop('disabled', false).text(originalText);
+                    }
+                },
+                error: function() {
+                    alert('<?php esc_html_e( 'Error saving environment. Please try again.', 'seminargo' ); ?>');
+                    submitBtn.prop('disabled', false).text(originalText);
+                }
+            });
+        });
+    });
+    </script>
+    <?php
+}
+
+// AJAX handler for toggle
+add_action( 'wp_ajax_seminargo_toggle_environment', 'seminargo_ajax_toggle_environment' );
+function seminargo_ajax_toggle_environment() {
+    check_ajax_referer( 'seminargo_environment_nonce', '_wpnonce' );
+    
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( [ 'message' => __( 'Insufficient permissions', 'seminargo' ) ] );
+    }
+    
+    $env = isset( $_POST['environment'] ) ? sanitize_text_field( $_POST['environment'] ) : '';
+    
+    if ( ! in_array( $env, [ 'staging', 'production' ] ) ) {
+        wp_send_json_error( [ 'message' => __( 'Invalid environment', 'seminargo' ) ] );
+    }
+    
+    update_option( 'seminargo_environment', $env );
+    wp_send_json_success( [ 'message' => __( 'Environment updated successfully!', 'seminargo' ) ] );
+}
+
+/**
  * Set content width
  */
 if ( ! isset( $content_width ) ) {
@@ -185,6 +522,56 @@ if ( file_exists( SEMINARGO_INC_PATH . 'embedded-mode.php' ) ) {
 // Menu icons functionality
 if ( file_exists( SEMINARGO_INC_PATH . 'menu-icons.php' ) ) {
     require SEMINARGO_INC_PATH . 'menu-icons.php';
+}
+
+// AJAX handler for hotel search in admin
+add_action( 'wp_ajax_search_hotels_for_selector', 'seminargo_ajax_search_hotels_for_selector' );
+function seminargo_ajax_search_hotels_for_selector() {
+    $query = isset( $_POST['query'] ) ? sanitize_text_field( $_POST['query'] ) : '';
+    $exclude_ids = isset( $_POST['exclude_ids'] ) ? array_map( 'intval', explode( ',', $_POST['exclude_ids'] ) ) : [];
+
+    if ( strlen( $query ) < 2 ) {
+        wp_send_json_success( [] );
+    }
+
+    // Optimized query for large datasets (5000+ hotels)
+    $args = [
+        'post_type'                => 'hotel',
+        'post_status'              => 'publish',
+        's'                        => $query,
+        'posts_per_page'           => 50, // Limit results for performance
+        'orderby'                  => 'title',
+        'order'                    => 'ASC',
+        'no_found_rows'            => true, // Skip counting total results (faster)
+        'update_post_meta_cache'   => false, // Don't cache meta - we only need one field
+        'update_post_term_cache'   => false, // Don't cache terms - not needed
+        'suppress_filters'         => false, // Keep search filters active
+    ];
+
+    if ( ! empty( $exclude_ids ) ) {
+        $args['post__not_in'] = $exclude_ids;
+    }
+
+    $hotels = new WP_Query( $args );
+
+    $results = [];
+
+    if ( $hotels->have_posts() ) {
+        // Use get_post() instead of the_post() for better performance
+        foreach ( $hotels->posts as $post ) {
+            // Get location directly from meta without loading full post
+            $location = get_post_meta( $post->ID, 'business_city', true );
+            
+            $results[] = [
+                'id'       => $post->ID,
+                'title'    => $post->post_title,
+                'location' => $location ?: '',
+            ];
+        }
+        wp_reset_postdata();
+    }
+
+    wp_send_json_success( $results );
 }
 
 // Widget areas
@@ -1756,16 +2143,72 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
             toggleTopHotelsSection();
         }
 
+        var searchTimeout;
         function filterHotels(searchTerm) {
             var searchLower = searchTerm.toLowerCase();
-            jQuery('#available-top-hotels li').each(function() {
-                var title = jQuery(this).data('title') || jQuery(this).find('.collection-item-handle span').text().toLowerCase();
-                if (title.indexOf(searchLower) !== -1) {
-                    jQuery(this).show();
-                } else {
-                    jQuery(this).hide();
-                }
-            });
+            var availableList = jQuery('#available-top-hotels');
+            
+            // Clear previous timeout
+            clearTimeout(searchTimeout);
+            
+            // If search is less than 2 characters, just filter the visible list
+            if (searchTerm.length < 2) {
+                availableList.find('li').each(function() {
+                    var title = jQuery(this).data('title') || jQuery(this).find('.collection-item-handle span').text().toLowerCase();
+                    if (title.indexOf(searchLower) !== -1) {
+                        jQuery(this).show();
+                    } else {
+                        jQuery(this).hide();
+                    }
+                });
+                return;
+            }
+            
+            // For longer searches, use AJAX to search all hotels
+            searchTimeout = setTimeout(function() {
+                var selectedIds = [];
+                jQuery('#selected-top-hotels li').each(function() {
+                    selectedIds.push(jQuery(this).data('id'));
+                });
+                
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'search_hotels_for_selector',
+                        query: searchTerm,
+                        exclude_ids: selectedIds.join(',')
+                    },
+                    success: function(response) {
+                        if (response.success && response.data.length > 0) {
+                            availableList.empty();
+                            response.data.forEach(function(hotel) {
+                                var location = hotel.location ? '<br><small style="color: #666;">' + hotel.location + '</small>' : '';
+                                var li = '<li data-id="' + hotel.id + '" data-title="' + hotel.title.toLowerCase() + '">' +
+                                    '<div class="collection-item-handle">' +
+                                    '<span>' + hotel.title + '</span>' + location +
+                                    '</div>' +
+                                    '<button type="button" class="add-btn" onclick="addHotel(this)">+</button>' +
+                                    '</li>';
+                                availableList.append(li);
+                            });
+                        } else {
+                            availableList.html('<li style="padding: 10px; color: #999; text-align: center;">Keine Hotels gefunden</li>');
+                        }
+                    },
+                    error: function() {
+                        // Fallback to local search on error
+                        availableList.find('li').each(function() {
+                            var title = jQuery(this).data('title') || jQuery(this).find('.collection-item-handle span').text().toLowerCase();
+                            if (title.indexOf(searchLower) !== -1) {
+                                jQuery(this).show();
+                            } else {
+                                jQuery(this).hide();
+                            }
+                        });
+                    }
+                });
+            }, 300);
         }
         
         // New functions for new selectors
@@ -1791,19 +2234,28 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
         function addHotelToList(button, type) {
             var li = jQuery(button).closest('li');
             var id = li.data('id');
-            var title = li.find('span').first().text();
+            // Get title - it's the first text node in the span, before any <br> or <small>
+            var titleSpan = li.find('span').first();
+            var title = titleSpan.clone().children().remove().end().text().trim();
+            // Get location if it exists
+            var locationSmall = titleSpan.find('small').text();
+            var location = locationSmall ? locationSmall.trim() : '';
             
             var selectedList = jQuery('#selected-top-hotels-tab-hotels');
             var availableList = jQuery('#available-top-hotels-tab-hotels');
             
-            // Add to selected
-            var newLi = '<li data-id="' + id + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px;">' +
+            // Add to selected - store location in data attribute for later retrieval
+            var newLi = jQuery('<li>', {
+                'data-id': id,
+                'data-location': location,
+                'style': 'padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px;'
+            }).html(
                 '<div style="display: flex; justify-content: space-between; align-items: center;">' +
                 '<span style="cursor: move;">⋮⋮</span>' +
                 '<span style="flex: 1; margin: 0 10px;">' + title + '</span>' +
                 '<button type="button" class="remove-btn" onclick="removeHotelFromList(this, \'' + type + '\')" style="padding: 2px 6px; font-size: 16px;">×</button>' +
-                '</div>' +
-                '</li>';
+                '</div>'
+            );
             
             selectedList.append(newLi);
             li.remove();
@@ -1813,15 +2265,20 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
         function removeHotelFromList(button, type) {
             var li = jQuery(button).closest('li');
             var id = li.data('id');
-            var title = li.find('span').eq(1).text();
+            // Get title - in selected list, it's the second span (after drag handle)
+            var titleSpan = li.find('span').eq(1);
+            var title = titleSpan.text().trim();
+            // Get location from data attribute if stored
+            var location = li.data('location') || '';
+            var locationHtml = location ? '<br><small style="color: #666;">' + location + '</small>' : '';
             
             var selectedList = jQuery('#selected-top-hotels-tab-hotels');
             var availableList = jQuery('#available-top-hotels-tab-hotels');
             
             // Add back to available
-            var newLi = '<li data-id="' + id + '" data-title="' + title.toLowerCase() + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">' +
+            var newLi = '<li data-id="' + id + '" data-title="' + title.toLowerCase() + '" data-location="' + (location || '') + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">' +
                 '<div style="display: flex; justify-content: space-between; align-items: center;">' +
-                '<span style="flex: 1;">' + title + '</span>' +
+                '<span style="flex: 1;">' + title + locationHtml + '</span>' +
                 '<button type="button" class="add-btn" onclick="addHotelToList(this, \'' + type + '\')" style="padding: 2px 8px; font-size: 14px;">+</button>' +
                 '</div>' +
                 '</li>';
@@ -1874,16 +2331,72 @@ function seminargo_homepage_collections_meta_box_callback( $post ) {
             updateSelectorInput(selectedList);
         }
         
+        var searchTimeoutTab;
         function filterHotelList(searchTerm, type) {
             var searchLower = searchTerm.toLowerCase();
-            jQuery('#available-top-hotels-tab-hotels li').each(function() {
-                var title = jQuery(this).data('title') || jQuery(this).find('span').first().text().toLowerCase();
-                if (title.indexOf(searchLower) !== -1) {
-                    jQuery(this).show();
-                } else {
-                    jQuery(this).hide();
-                }
-            });
+            var availableList = jQuery('#available-top-hotels-tab-hotels');
+            
+            // Clear previous timeout
+            clearTimeout(searchTimeoutTab);
+            
+            // If search is less than 2 characters, just filter the visible list
+            if (searchTerm.length < 2) {
+                availableList.find('li').each(function() {
+                    var title = jQuery(this).data('title') || jQuery(this).find('span').first().text().toLowerCase();
+                    if (title.indexOf(searchLower) !== -1) {
+                        jQuery(this).show();
+                    } else {
+                        jQuery(this).hide();
+                    }
+                });
+                return;
+            }
+            
+            // For longer searches, use AJAX to search all hotels
+            searchTimeoutTab = setTimeout(function() {
+                var selectedIds = [];
+                jQuery('#selected-top-hotels-tab-hotels li').each(function() {
+                    selectedIds.push(jQuery(this).data('id'));
+                });
+                
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'search_hotels_for_selector',
+                        query: searchTerm,
+                        exclude_ids: selectedIds.join(',')
+                    },
+                    success: function(response) {
+                        if (response.success && response.data.length > 0) {
+                            availableList.empty();
+                            response.data.forEach(function(hotel) {
+                                var location = hotel.location ? '<br><small style="color: #666;">' + hotel.location + '</small>' : '';
+                                var li = '<li data-id="' + hotel.id + '" data-title="' + hotel.title.toLowerCase() + '" style="padding: 8px; margin-bottom: 5px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">' +
+                                    '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                                    '<span style="flex: 1;">' + hotel.title + location + '</span>' +
+                                    '<button type="button" class="add-btn" onclick="addHotelToList(this, \'' + type + '\')" style="padding: 2px 8px; font-size: 14px;">+</button>' +
+                                    '</div>' +
+                                    '</li>';
+                                availableList.append(li);
+                            });
+                        } else {
+                            availableList.html('<li style="padding: 10px; color: #999; text-align: center;">Keine Hotels gefunden</li>');
+                        }
+                    },
+                    error: function() {
+                        // Fallback to local search on error
+                        availableList.find('li').each(function() {
+                            var title = jQuery(this).data('title') || jQuery(this).find('span').first().text().toLowerCase();
+                            if (title.indexOf(searchLower) !== -1) {
+                                jQuery(this).show();
+                            } else {
+                                jQuery(this).hide();
+                            }
+                        });
+                    }
+                });
+            }, 300);
         }
         
         function filterCollectionList(searchTerm, type) {

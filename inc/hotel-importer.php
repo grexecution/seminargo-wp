@@ -13,8 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Seminargo_Hotel_Importer {
 
-    private $api_url = 'https://lister-staging.seminargo.com/pricelist/graphql';
-    private $finder_base_url = 'https://finder.dev.seminargo.eu/';
+    private $api_url;
+    private $finder_base_url;
     private $log_option = 'seminargo_hotels_import_log';
     private $last_import_option = 'seminargo_hotels_last_import';
     private $imported_ids_option = 'seminargo_hotels_imported_ids';
@@ -26,6 +26,10 @@ class Seminargo_Hotel_Importer {
     private $log_batch_size = 5; // Flush logs every 5 entries for real-time visibility
 
     public function __construct() {
+        // Initialize URLs from centralized configuration
+        $this->api_url = seminargo_get_api_url();
+        $this->finder_base_url = seminargo_get_finder_url();
+        
         // Admin menu
         add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
 
@@ -62,7 +66,7 @@ class Seminargo_Hotel_Importer {
 
         // Add custom columns to hotels list
         add_filter( 'manage_hotel_posts_columns', [ $this, 'add_hotel_columns' ] );
-        add_action( 'manage_hotel_posts_custom_column', [ $this, 'render_hotel_column' ], 10, 2 );
+        add_action( 'manage_hotel_posts_custom_column', [ $this, 'render_featured_column' ], 10, 2 );
 
         // Column styles
         add_action( 'admin_head', [ $this, 'hotel_column_styles' ] );
@@ -869,6 +873,60 @@ class Seminargo_Hotel_Importer {
                 <!-- API Info Card -->
                 <div class="card" style="padding: 20px;">
                     <h2>🔌 <?php esc_html_e( 'API Configuration', 'seminargo' ); ?></h2>
+                    
+                    <!-- Environment Toggle Switch -->
+                    <div style="margin-bottom: 20px; padding: 15px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb;">
+                        <h3 style="margin: 0 0 15px 0; font-size: 14px;">🔀 <?php esc_html_e( 'Environment', 'seminargo' ); ?></h3>
+                        <?php
+                        $current_env = seminargo_get_environment();
+                        $is_production = $current_env === 'production';
+                        ?>
+                        <form method="post" action="" id="seminargo-environment-form" style="margin: 0;">
+                            <?php wp_nonce_field( 'seminargo_environment_nonce' ); ?>
+                            <input type="hidden" name="action" value="seminargo_toggle_environment">
+                            <input type="hidden" name="seminargo_environment" id="environment-value" value="<?php echo esc_attr( $current_env ); ?>">
+                            
+                            <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
+                                <div style="flex: 1;">
+                                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #f59e0b;">
+                                        🟡 <?php esc_html_e( 'Staging', 'seminargo' ); ?>
+                                    </div>
+                                    <div style="font-size: 11px; color: #666;">
+                                        <?php esc_html_e( 'Development', 'seminargo' ); ?>
+                                    </div>
+                                </div>
+                                
+                                <div style="position: relative;">
+                                    <label class="seminargo-toggle-switch" style="cursor: pointer;">
+                                        <input type="checkbox" id="environment-toggle" <?php checked( $is_production ); ?>>
+                                        <span class="seminargo-toggle-slider"></span>
+                                    </label>
+                                </div>
+                                
+                                <div style="flex: 1; text-align: right;">
+                                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #10b981;">
+                                        🟢 <?php esc_html_e( 'Production', 'seminargo' ); ?>
+                                    </div>
+                                    <div style="font-size: 11px; color: #666;">
+                                        <?php esc_html_e( 'Live Site', 'seminargo' ); ?>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div id="toggle-status" style="padding: 10px; background: <?php echo $is_production ? '#d1fae5' : '#fef3c7'; ?>; border-radius: 4px; margin-bottom: 10px; text-align: center; font-weight: 600; font-size: 12px; color: <?php echo $is_production ? '#065f46' : '#92400e'; ?>;">
+                                <?php if ( $is_production ) : ?>
+                                    🟢 <?php esc_html_e( 'PRODUCTION', 'seminargo' ); ?>
+                                <?php else : ?>
+                                    🟡 <?php esc_html_e( 'STAGING', 'seminargo' ); ?>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <button type="submit" class="button button-primary" id="save-environment-btn" style="width: 100%;">
+                                <?php esc_html_e( 'Save Environment', 'seminargo' ); ?>
+                            </button>
+                        </form>
+                    </div>
+                    
                     <table class="widefat" style="margin-top: 15px;">
                         <tr>
                             <td><strong><?php esc_html_e( 'API Endpoint:', 'seminargo' ); ?></strong></td>
@@ -877,6 +935,14 @@ class Seminargo_Hotel_Importer {
                         <tr>
                             <td><strong><?php esc_html_e( 'Finder Base URL:', 'seminargo' ); ?></strong></td>
                             <td><code style="font-size: 11px;"><?php echo esc_html( $this->finder_base_url ); ?></code></td>
+                        </tr>
+                        <tr>
+                            <td><strong><?php esc_html_e( 'Platform Widget URL:', 'seminargo' ); ?></strong></td>
+                            <td><code style="font-size: 11px;"><?php echo esc_html( seminargo_get_platform_widget_url() ); ?></code></td>
+                        </tr>
+                        <tr>
+                            <td><strong><?php esc_html_e( 'Platform Widget JS:', 'seminargo' ); ?></strong></td>
+                            <td><code style="font-size: 11px;"><?php echo esc_html( seminargo_get_platform_widget_js_url() ); ?></code></td>
                         </tr>
                         <tr>
                             <td><strong><?php esc_html_e( 'Cron Schedule:', 'seminargo' ); ?></strong></td>
@@ -961,6 +1027,57 @@ class Seminargo_Hotel_Importer {
             .log-field { color: #69db7c; }
             .log-old { color: #ff8787; text-decoration: line-through; }
             .log-new { color: #8ce99a; }
+            
+            /* Toggle Switch Styles */
+            .seminargo-toggle-switch {
+                position: relative;
+                display: inline-block;
+                width: 60px;
+                height: 30px;
+            }
+            
+            .seminargo-toggle-switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+            
+            .seminargo-toggle-slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: #f59e0b;
+                transition: .4s;
+                border-radius: 30px;
+            }
+            
+            .seminargo-toggle-slider:before {
+                position: absolute;
+                content: "";
+                height: 22px;
+                width: 22px;
+                left: 4px;
+                bottom: 4px;
+                background-color: white;
+                transition: .4s;
+                border-radius: 50%;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .seminargo-toggle-switch input:checked + .seminargo-toggle-slider {
+                background-color: #10b981;
+            }
+            
+            .seminargo-toggle-switch input:checked + .seminargo-toggle-slider:before {
+                transform: translateX(30px);
+            }
+            
+            .seminargo-toggle-switch input:focus + .seminargo-toggle-slider {
+                box-shadow: 0 0 1px #10b981;
+            }
         </style>
 
         <script>
@@ -1505,6 +1622,61 @@ class Seminargo_Hotel_Importer {
                     console.error('❌ Skip to Phase 2 button NOT FOUND in DOM');
                 }
             }, 1000);
+            
+            // Environment Toggle Handler
+            $('#environment-toggle').on('change', function() {
+                var isProduction = $(this).is(':checked');
+                $('#environment-value').val(isProduction ? 'production' : 'staging');
+                
+                // Update status display
+                var statusDiv = $('#toggle-status');
+                if (isProduction) {
+                    statusDiv.css({
+                        'background': '#d1fae5',
+                        'color': '#065f46'
+                    }).html('🟢 <?php echo esc_js( __( 'PRODUCTION', 'seminargo' ) ); ?>');
+                } else {
+                    statusDiv.css({
+                        'background': '#fef3c7',
+                        'color': '#92400e'
+                    }).html('🟡 <?php echo esc_js( __( 'STAGING', 'seminargo' ) ); ?>');
+                }
+            });
+            
+            $('#seminargo-environment-form').on('submit', function(e) {
+                e.preventDefault();
+                
+                var form = $(this);
+                var submitBtn = $('#save-environment-btn');
+                var originalText = submitBtn.text();
+                
+                submitBtn.prop('disabled', true).text('<?php echo esc_js( __( 'Saving...', 'seminargo' ) ); ?>');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'seminargo_toggle_environment',
+                        environment: $('#environment-value').val(),
+                        _wpnonce: '<?php echo wp_create_nonce( 'seminargo_environment_nonce' ); ?>'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            submitBtn.text('<?php echo esc_js( __( 'Saved!', 'seminargo' ) ); ?>').css('background', '#10b981');
+                            setTimeout(function() {
+                                location.reload();
+                            }, 1000);
+                        } else {
+                            alert('Error: ' + (response.data && response.data.message ? response.data.message : 'Unknown error'));
+                            submitBtn.prop('disabled', false).text(originalText);
+                        }
+                    },
+                    error: function() {
+                        alert('<?php echo esc_js( __( 'Error saving environment. Please try again.', 'seminargo' ) ); ?>');
+                        submitBtn.prop('disabled', false).text(originalText);
+                    }
+                });
+            });
         });
         </script>
         <?php
@@ -2053,8 +2225,9 @@ class Seminargo_Hotel_Importer {
                 // #endregion
                 
                 // WP Engine enforces 60-second execution limit
-                // OPTIMIZED: Process MULTIPLE images per request (3-5 images) to speed up import
-                // Each image takes ~5-10 seconds, so we can safely process 3-5 per request
+                // OPTIMIZED: Process MULTIPLE images per request (3 images) to speed up import
+                // Each image takes ~5-12 seconds (download + processing), so we can safely process 3 per request
+                // With 50s threshold and 3 images, we have ~16s per image budget, but use 12s max to account for overhead
                 $timeout_threshold = 50; // Exit at 50 seconds to leave 10s buffer
                 $images_per_request = 3; // Process 3 images per request (can be increased if stable)
                 
@@ -3461,10 +3634,10 @@ class Seminargo_Hotel_Importer {
      * Batch check existing images for a hotel (optimization for fast skipping)
      * @param object $hotel Hotel object from API
      * @param int $start_index Starting image index
-     * @param int $total_images Total number of images
+     * @param int $end_index Ending image index (exclusive) - OPTIMIZED: only check range we need
      * @return array Map of image URLs to attachment IDs (if exists)
      */
-    private function batch_check_existing_images( $hotel, $start_index, $total_images ) {
+    private function batch_check_existing_images( $hotel, $start_index, $end_index ) {
         if ( empty( $hotel->medias ) ) {
             return [];
         }
@@ -3474,7 +3647,8 @@ class Seminargo_Hotel_Importer {
         $urls_to_check = [];
         
         // Collect all URLs to check (both encoded and original)
-        for ( $i = $start_index; $i < $total_images && $i < count( $hotel->medias ); $i++ ) {
+        // OPTIMIZED: Only check the range we need (start_index to end_index)
+        for ( $i = $start_index; $i < $end_index && $i < count( $hotel->medias ); $i++ ) {
             $media = $hotel->medias[ $i ];
             $image_url = $media->previewUrl ?? $media->url;
             if ( empty( $image_url ) ) {

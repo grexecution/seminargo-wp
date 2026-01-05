@@ -5,10 +5,13 @@
  */
 
 class Seminargo_Hotel_Importer_Simple {
-    private $api_url = 'https://lister-staging.seminargo.com/pricelist/graphql';
+    private $api_url;
     private $logs = [];
 
     public function __construct() {
+        // Initialize API URL from centralized configuration
+        $this->api_url = seminargo_get_api_url();
+        
         add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
         add_action( 'wp_ajax_seminargo_import_hotels', [ $this, 'ajax_import_hotels' ] );
         add_action( 'wp_ajax_seminargo_get_import_logs', [ $this, 'ajax_get_logs' ] );
@@ -203,7 +206,7 @@ class Seminargo_Hotel_Importer_Simple {
         try {
             // Fetch ALL hotels in ONE call
             $this->log( 'info', '📥 Fetching hotels from API...' );
-            $this->log( 'info', 'API: https://lister-staging.seminargo.com/pricelist/graphql' );
+            $this->log( 'info', 'API: ' . $this->api_url );
             $this->log( 'info', 'Parameters: limit=10000, skip=null' );
 
             $hotels = $this->fetch_hotels();
