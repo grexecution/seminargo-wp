@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Define theme constants
  */
-define( 'SEMINARGO_VERSION', '1.2.0' );
+define( 'SEMINARGO_VERSION', '2.6.1' );
 define( 'SEMINARGO_THEME_PATH', get_template_directory() );
 define( 'SEMINARGO_THEME_URL', get_template_directory_uri() );
 define( 'SEMINARGO_ASSETS_PATH', SEMINARGO_THEME_PATH . '/assets/' );
@@ -358,11 +358,186 @@ function seminargo_ajax_toggle_environment() {
 }
 
 /**
+ * Brevo Newsletter Signup
+ * Adds contact to Brevo with segmentation based on country
+ */
+add_action( 'wp_ajax_seminargo_newsletter_signup', 'seminargo_ajax_newsletter_signup' );
+add_action( 'wp_ajax_nopriv_seminargo_newsletter_signup', 'seminargo_ajax_newsletter_signup' );
+
+function seminargo_ajax_newsletter_signup() {
+    // Validate input
+    $email = isset( $_POST['email'] ) ? sanitize_email( $_POST['email'] ) : '';
+    $anrede = isset( $_POST['anrede'] ) ? sanitize_text_field( $_POST['anrede'] ) : '';
+    $vorname = isset( $_POST['vorname'] ) ? sanitize_text_field( $_POST['vorname'] ) : '';
+    $nachname = isset( $_POST['nachname'] ) ? sanitize_text_field( $_POST['nachname'] ) : '';
+    $country = isset( $_POST['country'] ) ? sanitize_text_field( $_POST['country'] ) : '';
+
+    // Validation
+    if ( ! is_email( $email ) ) {
+        wp_send_json_error( [ 'message' => __( 'Ungültige E-Mail-Adresse', 'seminargo' ) ] );
+    }
+
+    if ( empty( $vorname ) || empty( $nachname ) ) {
+        wp_send_json_error( [ 'message' => __( 'Bitte füllen Sie alle Pflichtfelder aus', 'seminargo' ) ] );
+    }
+
+    if ( ! in_array( $country, [ 'DE', 'AT' ] ) ) {
+        wp_send_json_error( [ 'message' => __( 'Bitte wählen Sie ein Land', 'seminargo' ) ] );
+    }
+
+    // Determine list based on country
+    // List ID 6 = Deutschland Newsletter
+    // List ID 5 = Österreich Newsletter
+    $list_id = ( $country === 'DE' ) ? 6 : 5;
+    $list_name = ( $country === 'DE' ) ? 'Deutschland Newsletter' : 'Österreich Newsletter';
+
+    // Brevo API Configuration
+    $api_key = get_option( 'seminargo_brevo_api_key', '' );
+    $api_url = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
+
+    // Format ANREDE for Brevo
+    // Herr → "geehrter Herr"
+    // Frau → "geehrte Frau"
+    $anrede_formatted = ( $anrede === 'Herr' ) ? 'geehrter Herr' : 'geehrte Frau';
+
+    // Prepare data for Brevo (Double Opt-In)
+    $contact_data = [
+        'email' => $email,
+        'attributes' => [
+            'VORNAME' => $vorname,
+            'NACHNAME' => $nachname,
+            'ANREDE_MIGRATE_MIGRATE_MIGRATE_MIGRATE_MIGRATE' => $anrede_formatted,
+            'COUNTRY' => $country,
+        ],
+        'includeListIds' => [ $list_id ], // DOI uses includeListIds
+        'templateId' => 32, // DOI confirmation email template
+        'redirectionUrl' => home_url('/'), // Redirect to homepage after confirmation
+    ];
+
+    // Make API request to Brevo
+    $response = wp_remote_post( $api_url, [
+        'headers' => [
+            'api-key' => $api_key,
+            'Content-Type' => 'application/json',
+        ],
+        'body' => wp_json_encode( $contact_data ),
+        'timeout' => 15,
+    ] );
+
+    // Handle API response
+    if ( is_wp_error( $response ) ) {
+        wp_send_json_error( [
+            'message' => __( 'Verbindungsfehler. Bitte versuchen Sie es später erneut.', 'seminargo' ),
+            'error' => $response->get_error_message(),
+        ] );
+    }
+
+    $response_code = wp_remote_retrieve_response_code( $response );
+    $response_body = wp_remote_retrieve_body( $response );
+    $response_data = json_decode( $response_body, true );
+
+    // Success codes: 201 (created) or 204 (updated)
+    if ( in_array( $response_code, [ 201, 204 ] ) ) {
+        wp_send_json_success( [
+            'message' => __( 'Fast geschafft! Bitte prüfen Sie Ihr E-Mail-Postfach und bestätigen Sie Ihre Anmeldung.', 'seminargo' ),
+        ] );
+    } else {
+        // API error
+        $error_message = isset( $response_data['message'] ) ? $response_data['message'] : __( 'Ein Fehler ist aufgetreten', 'seminargo' );
+
+        wp_send_json_error( [
+            'message' => $error_message,
+        ] );
+    }
+}
+
+/**
+ * Hotel Newsletter Signup (for landing page)
+ * Adds hotel contact to Brevo newsletter list
+ */
+add_action( 'wp_ajax_seminargo_hotel_newsletter_signup', 'seminargo_ajax_hotel_newsletter_signup' );
+add_action( 'wp_ajax_nopriv_seminargo_hotel_newsletter_signup', 'seminargo_ajax_hotel_newsletter_signup' );
+
+function seminargo_ajax_hotel_newsletter_signup() {
+    // Validate input
+    $email = isset( $_POST['email'] ) ? sanitize_email( $_POST['email'] ) : '';
+    $vorname = isset( $_POST['vorname'] ) ? sanitize_text_field( $_POST['vorname'] ) : '';
+    $nachname = isset( $_POST['nachname'] ) ? sanitize_text_field( $_POST['nachname'] ) : '';
+    $hotelname = isset( $_POST['hotelname'] ) ? sanitize_text_field( $_POST['hotelname'] ) : '';
+
+    // Validation
+    if ( ! is_email( $email ) ) {
+        wp_send_json_error( [ 'message' => __( 'Ungültige E-Mail-Adresse', 'seminargo' ) ] );
+    }
+
+    if ( empty( $vorname ) || empty( $nachname ) || empty( $hotelname ) ) {
+        wp_send_json_error( [ 'message' => __( 'Bitte füllen Sie alle Pflichtfelder aus', 'seminargo' ) ] );
+    }
+
+    // Brevo API Configuration
+    $api_key = get_option( 'seminargo_brevo_api_key', '' );
+    $api_url = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
+
+    // Prepare data for Brevo (Double Opt-In)
+    $contact_data = [
+        'email' => $email,
+        'attributes' => [
+            'VORNAME' => $vorname,
+            'NACHNAME' => $nachname,
+            'FIRMA' => $hotelname,
+        ],
+        'includeListIds' => [ 99 ], // Hotelnewsletter list
+        'templateId' => 32, // DOI confirmation email template
+        'redirectionUrl' => home_url('/'), // Redirect to homepage after confirmation
+    ];
+
+    // Make API request to Brevo
+    $response = wp_remote_post( $api_url, [
+        'headers' => [
+            'api-key' => $api_key,
+            'Content-Type' => 'application/json',
+        ],
+        'body' => wp_json_encode( $contact_data ),
+        'timeout' => 15,
+    ] );
+
+    // Handle API response
+    if ( is_wp_error( $response ) ) {
+        wp_send_json_error( [
+            'message' => __( 'Verbindungsfehler. Bitte versuchen Sie es später erneut.', 'seminargo' ),
+        ] );
+    }
+
+    $response_code = wp_remote_retrieve_response_code( $response );
+    $response_body = wp_remote_retrieve_body( $response );
+    $response_data = json_decode( $response_body, true );
+
+    // Success codes: 201 (created) or 204 (updated)
+    if ( in_array( $response_code, [ 201, 204 ] ) ) {
+        wp_send_json_success( [
+            'message' => __( 'Fast geschafft! Bitte prüfen Sie Ihr E-Mail-Postfach und bestätigen Sie Ihre Anmeldung.', 'seminargo' ),
+        ] );
+    } else {
+        // API error
+        $error_message = isset( $response_data['message'] ) ? $response_data['message'] : __( 'Ein Fehler ist aufgetreten', 'seminargo' );
+
+        wp_send_json_error( [
+            'message' => $error_message,
+        ] );
+    }
+}
+
+/**
  * Set content width
  */
 if ( ! isset( $content_width ) ) {
     $content_width = 1200;
 }
+
+/**
+ * Include Logo Slider Manager
+ */
+require_once SEMINARGO_INC_PATH . 'logo-slider-manager.php';
 
 /**
  * Theme setup
@@ -2565,3 +2740,94 @@ function seminargo_enqueue_homepage_admin_scripts( $hook ) {
     }
 }
 add_action( 'admin_enqueue_scripts', 'seminargo_enqueue_homepage_admin_scripts' );
+
+/**
+ * Redirect old hotel slugs to new URLs (301 redirect)
+ * 
+ * Checks if the current URL matches an old slug (migSlug) and redirects to the new URL.
+ * This handles migration from old URL structure to new WordPress permalink structure.
+ */
+function seminargo_redirect_old_hotel_slugs() {
+    // Only run on frontend, not admin or AJAX
+    if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
+        return;
+    }
+
+    // Skip if we're already on a valid hotel post (to avoid redirect loops)
+    if ( is_singular( 'hotel' ) ) {
+        return;
+    }
+
+    // Get the current request URI
+    $request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+    
+    if ( empty( $request_uri ) ) {
+        return;
+    }
+    
+    // Remove query string and leading/trailing slashes
+    $request_uri = strtok( $request_uri, '?' );
+    $request_uri = trim( $request_uri, '/' );
+    
+    // Extract the slug from the URL (last segment)
+    $uri_parts = explode( '/', $request_uri );
+    $current_slug = end( $uri_parts );
+
+    // Skip if empty or if it's not a potential hotel slug
+    if ( empty( $current_slug ) ) {
+        return;
+    }
+
+    // CRITICAL: Handle BOTH encoded and decoded versions of old URLs
+    // Old URL: /hotel/Jugendg%C3%A4stehaus_Bad_Ischl (browser shows with %)
+    // Stored: Jugendgästehaus_Bad_Ischl (actual ä character from API)
+    //
+    // Server may give us REQUEST_URI as:
+    //   - Decoded: Jugendgästehaus_Bad_Ischl (actual characters)
+    //   - Encoded: Jugendg%C3%A4stehaus_Bad_Ischl (percent-encoded)
+    //
+    // Solution: Try BOTH decoded and encoded versions
+
+    $slug_decoded = rawurldecode( $current_slug );     // Convert %C3%A4 → ä
+    $slug_encoded = rawurlencode( $slug_decoded );     // Convert back: ä → %C3%A4
+
+    // Try both variations (one will match)
+    $hotel_query = new WP_Query( [
+        'post_type'      => 'hotel',
+        'post_status'    => 'publish',
+        'posts_per_page' => 1,
+        'meta_query'     => [
+            'relation' => 'OR',
+            [
+                'key'     => 'mig_slug',
+                'value'   => $current_slug,    // As-is from URL
+                'compare' => '=',
+            ],
+            [
+                'key'     => 'mig_slug',
+                'value'   => $slug_decoded,    // Decoded version (with actual ä)
+                'compare' => '=',
+            ],
+        ],
+        'fields'         => 'ids',
+    ] );
+    
+    // If we found a hotel with this old slug, redirect to the new URL
+    if ( $hotel_query->have_posts() ) {
+        $hotel_id = $hotel_query->posts[0];
+        $new_url = get_permalink( $hotel_id );
+        
+        if ( $new_url ) {
+            // Preserve query string if present
+            $query_string = isset( $_SERVER['QUERY_STRING'] ) ? $_SERVER['QUERY_STRING'] : '';
+            if ( ! empty( $query_string ) ) {
+                $new_url = add_query_arg( $query_string, '', $new_url );
+            }
+            
+            // 301 Permanent Redirect
+            wp_redirect( $new_url, 301 );
+            exit;
+        }
+    }
+}
+add_action( 'template_redirect', 'seminargo_redirect_old_hotel_slugs', 1 );

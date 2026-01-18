@@ -6454,9 +6454,10 @@ a.btn-info-link svg {
         display: block;
     }
 
-    .hotel-sidebar .booking-card {
+    /* Keep booking card visible on mobile - don't hide */
+    /* .hotel-sidebar .booking-card {
         display: none;
-    }
+    } */
 }
 
 @media (max-width: 768px) {

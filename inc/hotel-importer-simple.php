@@ -271,6 +271,7 @@ class Seminargo_Hotel_Importer_Simple {
             hotelList(limit: 10000, skip: null) {
                 id
                 slug
+                migSlug
                 refCode
                 name
                 businessName
@@ -370,16 +371,43 @@ class Seminargo_Hotel_Importer_Simple {
 
     private function process_hotel( $hotel ) {
         $hotel_id = strval( $hotel->id );
+        $ref_code = $hotel->refCode ?? '';
         $hotel_title = $hotel->businessName ?? $hotel->name ?? 'Unnamed Hotel';
 
-        // Check if hotel exists
-        $existing = get_posts( [
+        // Check if hotel exists - check BOTH hotel_id AND ref_code as backup
+        $args = [
             'post_type'      => 'hotel',
-            'meta_key'       => 'hotel_id',
-            'meta_value'     => $hotel_id,
             'posts_per_page' => 1,
             'post_status'    => 'any',
-        ] );
+            'meta_query'     => [
+                'relation' => 'OR',
+                [
+                    'key'   => 'hotel_id',
+                    'value' => $hotel_id,
+                ],
+            ],
+        ];
+        
+        // Add ref_code check if available (as backup duplicate detection)
+        if ( ! empty( $ref_code ) ) {
+            $args['meta_query'][] = [
+                'key'   => 'ref_code',
+                'value' => $ref_code,
+            ];
+        }
+        
+        $existing = get_posts( $args );
+        
+        // If found by ref_code but hotel_id doesn't match, update the hotel_id to fix data inconsistency
+        if ( ! empty( $existing ) && ! empty( $ref_code ) ) {
+            $found_post_id = $existing[0]->ID;
+            $existing_hotel_id = get_post_meta( $found_post_id, 'hotel_id', true );
+            
+            // If hotel_id doesn't match, update it (fixes type mismatch issues)
+            if ( strval( $existing_hotel_id ) !== $hotel_id ) {
+                update_post_meta( $found_post_id, 'hotel_id', $hotel_id );
+            }
+        }
 
         if ( empty( $existing ) ) {
             // Create new hotel
@@ -422,6 +450,8 @@ class Seminargo_Hotel_Importer_Simple {
     private function update_hotel_meta( $post_id, $hotel ) {
         $meta_fields = [
             'ref_code'                          => $hotel->refCode ?? '',
+            'api_slug'                          => $hotel->slug ?? '',
+            'mig_slug'                          => $hotel->migSlug ?? '',
             'address_1'                         => $hotel->businessAddress1 ?? '',
             'address_2'                         => $hotel->businessAddress2 ?? '',
             'zip'                               => $hotel->businessZip ?? '',

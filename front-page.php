@@ -142,32 +142,28 @@ get_header(); ?>
                 <div class="logo-slider-wrapper">
                     <div class="logo-slider">
                         <?php
-                        // Real client logos - Vector SVG format
-                        $client_logos = array(
-                            array('name' => 'REWE', 'image' => 'rewe.svg'),
-                            array('name' => 'dm', 'image' => 'dm.svg'),
-                            array('name' => 'Allianz', 'image' => 'allianz.svg'),
-                            array('name' => 'Austrian Airlines', 'image' => 'austrian.svg'),
-                            array('name' => 'Henkel', 'image' => 'henkel.svg'),
-                            array('name' => 'DB Schenker', 'image' => 'dbschenker.svg'),
-                            array('name' => 'STRABAG', 'image' => 'strabag.svg'),
-                            array('name' => 'Mondi', 'image' => 'mondi.svg'),
-                            array('name' => 'Agrana', 'image' => 'agrana.svg'),
-                            array('name' => 'Doka', 'image' => 'doka.svg'),
-                        );
+                        // Get logos from post meta (editable in admin)
+                        $page_id = get_the_ID();
+                        $custom_logos = get_post_meta( $page_id, 'logo_slider_logos', true );
+
+                        if ( empty( $custom_logos ) || ! is_array( $custom_logos ) ) {
+                            $custom_logos = array(); // No defaults - must be managed in admin
+                        }
 
                         // Display logos twice for seamless scrolling
+                        if ( ! empty( $custom_logos ) ) :
                         for ($i = 0; $i < 2; $i++) :
-                            foreach ($client_logos as $logo) :
-                                $logo_path = get_template_directory_uri() . '/assets/images/client-vector/dark/' . $logo['image'];
+                            foreach ($custom_logos as $logo) :
                                 ?>
                                 <div class="logo-slide">
                                     <div class="logo-item" title="<?php echo esc_attr($logo['name']); ?>">
-                                        <img src="<?php echo esc_url($logo_path); ?>" alt="<?php echo esc_attr($logo['name']); ?>" loading="lazy">
+                                        <img src="<?php echo esc_url($logo['url']); ?>" alt="<?php echo esc_attr($logo['name']); ?>" loading="lazy">
                                     </div>
                                 </div>
                             <?php endforeach;
-                        endfor; ?>
+                        endfor;
+                        endif; // End if custom_logos not empty
+                        ?>
                     </div>
                 </div>
             </div>
@@ -324,21 +320,22 @@ get_header(); ?>
                             // All hotels are available in location tab
                             $tab_filters[] = 'location';
                             $tab_filters_attr = implode( ' ', $tab_filters );
-                            // Get hotel image - same fallback pattern as single/archive pages
+                            // Get hotel image - use API URLs (Phase 2 removed, no downloads)
+                            $hotel_image = false;
+
+                            // Try WordPress featured image first (if exists from legacy)
                             $hotel_image = get_the_post_thumbnail_url( $hotel_id, 'large' );
+
+                            // Fallback to API image URLs
                             if ( ! $hotel_image ) {
-                                // First try WordPress gallery (downloaded images)
-                                $gallery = get_post_meta( $hotel_id, 'gallery', true );
-                                if ( is_array( $gallery ) && ! empty( $gallery ) ) {
-                                    $hotel_image = $gallery[0];
+                                $medias = json_decode( get_post_meta( $hotel_id, 'medias_json', true ), true );
+                                if ( ! empty( $medias[0]['previewUrl'] ) ) {
+                                    $hotel_image = $medias[0]['previewUrl'];
+                                } elseif ( ! empty( $medias[0]['url'] ) ) {
+                                    $hotel_image = $medias[0]['url'];
                                 } else {
-                                    // Fallback to external API image URLs
-                                    $medias = json_decode( get_post_meta( $hotel_id, 'medias_json', true ), true );
-                                    if ( ! empty( $medias[0]['previewUrl'] ) ) {
-                                        $hotel_image = $medias[0]['previewUrl'];
-                                    } else {
-                                        $hotel_image = 'https://images.seminargo.pro/hotel-83421-4-400x300-FIT_AND_TRIM-f09c5c96e1bc6e5e8f88c37c951bbaa2.webp';
-                                    }
+                                    // Final fallback placeholder
+                                    $hotel_image = 'https://images.seminargo.pro/hotel-83421-4-400x300-FIT_AND_TRIM-f09c5c96e1bc6e5e8f88c37c951bbaa2.webp';
                                 }
                             }
 

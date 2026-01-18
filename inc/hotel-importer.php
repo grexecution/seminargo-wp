@@ -20,6 +20,8 @@ class Seminargo_Hotel_Importer {
     private $imported_ids_option = 'seminargo_hotels_imported_ids';
     private $auto_import_enabled_option = 'seminargo_auto_import_enabled';
     private $auto_import_progress_option = 'seminargo_auto_import_progress';
+    private $last_full_sync_option = 'seminargo_last_full_sync_time'; // Track when last full sync occurred
+    private $sync_history_option = 'seminargo_sync_history'; // Stores history of past syncs
 
     // Log batching to avoid database thrashing
     private $log_batch = [];
@@ -44,6 +46,16 @@ class Seminargo_Hotel_Importer {
         add_action( 'wp_ajax_seminargo_toggle_auto_import', [ $this, 'ajax_toggle_auto_import' ] );
         add_action( 'wp_ajax_seminargo_reset_auto_import', [ $this, 'ajax_reset_auto_import' ] );
         add_action( 'wp_ajax_seminargo_get_auto_import_status', [ $this, 'ajax_get_auto_import_status' ] );
+        add_action( 'wp_ajax_seminargo_force_reschedule_cron', [ $this, 'ajax_force_reschedule_cron' ] );
+        add_action( 'wp_ajax_seminargo_get_sync_history', [ $this, 'ajax_get_sync_history' ] );
+        add_action( 'wp_ajax_seminargo_stop_import', [ $this, 'ajax_stop_import' ] );
+        add_action( 'wp_ajax_seminargo_resume_import', [ $this, 'ajax_resume_import' ] );
+        add_action( 'wp_ajax_seminargo_execute_batch_direct', [ $this, 'ajax_execute_batch_direct' ] );
+        add_action( 'wp_ajax_nopriv_seminargo_execute_batch_direct', [ $this, 'ajax_execute_batch_direct' ] ); // Allow non-auth for async call
+        add_action( 'wp_ajax_seminargo_find_duplicates', [ $this, 'ajax_find_duplicates' ] );
+        add_action( 'wp_ajax_seminargo_cleanup_duplicates', [ $this, 'ajax_cleanup_duplicates' ] );
+        add_action( 'wp_ajax_seminargo_delete_hotel_images', [ $this, 'ajax_delete_hotel_images' ] );
+        add_action( 'wp_ajax_seminargo_save_brevo_api_key', [ $this, 'ajax_save_brevo_api_key' ] );
 
         // Cron
         add_action( 'init', [ $this, 'register_cron' ] );
@@ -256,9 +268,9 @@ class Seminargo_Hotel_Importer {
      * Add custom cron interval
      */
     public function add_cron_interval( $schedules ) {
-        $schedules['every_six_hours'] = [
-            'interval' => 21600,
-            'display'  => __( 'Every 6 Hours', 'seminargo' ),
+        $schedules['every_four_hours'] = [
+            'interval' => 14400, // 4 hours in seconds
+            'display'  => __( 'Every 4 Hours (6x daily)', 'seminargo' ),
         ];
         return $schedules;
     }
@@ -307,8 +319,10 @@ class Seminargo_Hotel_Importer {
         $is_scheduled = wp_next_scheduled( 'seminargo_hotels_cron' );
 
         if ( $auto_import_enabled && ! $is_scheduled ) {
-            // Schedule to run every hour when auto-import is enabled
-            wp_schedule_event( time(), 'hourly', 'seminargo_hotels_cron' );
+            // Schedule to run every 4 hours when auto-import is enabled (6x daily)
+            // Only schedule if NOT already scheduled (avoid rescheduling on every page load)
+            $next_time = time() + ( 4 * HOUR_IN_SECONDS ); // 4 hours from now
+            wp_schedule_event( $next_time, 'every_four_hours', 'seminargo_hotels_cron' );
         } elseif ( ! $auto_import_enabled && $is_scheduled ) {
             // Unschedule if auto-import is disabled
             wp_clear_scheduled_hook( 'seminargo_hotels_cron' );
@@ -394,6 +408,15 @@ class Seminargo_Hotel_Importer {
             'hotel',
             'side',
             'default'
+        );
+
+        add_meta_box(
+            'hotel_debug_image_urls',
+            '🔍 ' . __( 'Debug: API Image URLs', 'seminargo' ),
+            [ $this, 'render_debug_image_urls_meta_box' ],
+            'hotel',
+            'normal',
+            'low'
         );
 
     }
@@ -626,90 +649,46 @@ class Seminargo_Hotel_Importer {
         $all_attachments = get_attached_media( 'image', $post->ID );
 
         echo '<style>
-            .hotel-media-section { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #ddd; }
-            .hotel-media-section:last-child { border-bottom: none; }
-            .hotel-media-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-            .hotel-media-thumb { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 4px; border: 2px solid #ddd; }
-            .hotel-media-thumb.featured { border-color: #2271b1; }
-            .hotel-media-thumb img { width: 100%; height: 100%; object-fit: cover; }
-            .hotel-media-badge { position: absolute; top: 2px; right: 2px; background: #2271b1; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: bold; }
-            .hotel-media-count { background: #f0f0f1; padding: 8px; border-radius: 4px; font-size: 13px; margin-top: 10px; }
+            .hotel-media-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+            .hotel-media-thumb { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 6px; border: 2px solid #e5e7eb; background: #f9fafb; transition: all 0.2s; }
+            .hotel-media-thumb:hover { border-color: #AC2A6E; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+            .hotel-media-thumb.featured { border-color: #AC2A6E; }
+            .hotel-media-thumb img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s; }
+            .hotel-media-thumb:hover img { transform: scale(1.05); }
+            .hotel-media-badge { position: absolute; top: 4px; right: 4px; background: rgba(172, 42, 110, 0.95); color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
         </style>';
 
-        // Featured Image
-        echo '<div class="hotel-media-section">';
-        echo '<p><strong>📸 ' . esc_html__( 'Featured Image', 'seminargo' ) . '</strong></p>';
-        if ( has_post_thumbnail( $post->ID ) ) {
-            echo get_the_post_thumbnail( $post->ID, 'medium', [ 'style' => 'max-width: 100%; height: auto; border-radius: 4px;' ] );
-            $featured_id = get_post_thumbnail_id( $post->ID );
-            $edit_url = admin_url( 'post.php?post=' . $featured_id . '&action=edit' );
-            echo '<p style="margin-top: 5px; font-size: 11px;"><a href="' . esc_url( $edit_url ) . '" target="_blank">✏️ ' . esc_html__( 'Edit in Media Library', 'seminargo' ) . '</a></p>';
-        } else {
-            echo '<p style="color: #999; font-style: italic;">' . esc_html__( 'No featured image set', 'seminargo' ) . '</p>';
-        }
-        echo '</div>';
+        // API Images (show previews from API)
+        echo '<p style="margin-bottom: 12px; font-size: 14px; font-weight: 600; color: #374151;">🖼️ ' . sprintf( esc_html__( '%d Images from API', 'seminargo' ), count( $medias ) ) . '</p>';
 
-        // Gallery Images (from gallery meta)
-        echo '<div class="hotel-media-section">';
-        echo '<p><strong>🖼️ ' . esc_html__( 'Gallery Images', 'seminargo' ) . ' (' . count( $gallery_ids ) . ')</strong></p>';
-        if ( ! empty( $gallery_ids ) ) {
+        if ( ! empty( $medias ) ) {
             echo '<div class="hotel-media-gallery">';
-            $featured_id = get_post_thumbnail_id( $post->ID );
-            foreach ( array_slice( $gallery_ids, 0, 12 ) as $attachment_id ) {
-                $img = wp_get_attachment_image( $attachment_id, 'thumbnail', false, [ 'loading' => 'lazy' ] );
-                if ( $img ) {
-                    $edit_url = admin_url( 'post.php?post=' . $attachment_id . '&action=edit' );
-                    $is_featured = ( $attachment_id == $featured_id );
-                    echo '<a href="' . esc_url( $edit_url ) . '" target="_blank" class="hotel-media-thumb' . ( $is_featured ? ' featured' : '' ) . '" title="' . esc_attr__( 'Click to edit', 'seminargo' ) . '">';
-                    echo $img;
-                    if ( $is_featured ) {
-                        echo '<span class="hotel-media-badge">★</span>';
+            foreach ( array_slice( $medias, 0, 12 ) as $index => $media ) {
+                $preview_url = $media['previewUrl'] ?? $media['url'] ?? '';
+                $name = $media['name'] ?? 'Image ' . $index;
+
+                if ( $preview_url ) {
+                    echo '<a href="' . esc_url( $preview_url ) . '" target="_blank" class="hotel-media-thumb' . ( $index === 0 ? ' featured' : '' ) . '" title="' . esc_attr( $name ) . ' - Click to view full size">';
+                    if ( $index === 0 ) {
+                        echo '<span class="hotel-media-badge">⭐</span>';
                     }
+                    echo '<img src="' . esc_url( $preview_url ) . '" alt="' . esc_attr( $name ) . '" loading="lazy" />';
                     echo '</a>';
                 }
             }
             echo '</div>';
-            if ( count( $gallery_ids ) > 12 ) {
-                echo '<p style="margin-top: 8px; font-size: 11px; color: #666;">' . sprintf( esc_html__( '... and %d more images', 'seminargo' ), count( $gallery_ids ) - 12 ) . '</p>';
+
+            if ( count( $medias ) > 12 ) {
+                echo '<p style="margin-top: 8px; font-size: 11px; color: #666; text-align: center;">' . sprintf( esc_html__( '+ %d more images', 'seminargo' ), count( $medias ) - 12 ) . '</p>';
             }
-            echo '<p style="margin-top: 10px; font-size: 11px;"><a href="' . esc_url( admin_url( 'upload.php?post_parent=' . $post->ID ) ) . '" target="_blank">📁 ' . esc_html__( 'View all in Media Library', 'seminargo' ) . '</a></p>';
         } else {
-            echo '<p style="color: #999; font-style: italic;">' . esc_html__( 'No gallery images downloaded yet', 'seminargo' ) . '</p>';
-            echo '<p style="font-size: 11px; color: #666;">' . esc_html__( 'Images will be downloaded automatically when importing from API', 'seminargo' ) . '</p>';
-        }
-        echo '</div>';
-
-        // All Attached Images (including those not in gallery)
-        if ( ! empty( $all_attachments ) ) {
-            $non_gallery = array_filter( $all_attachments, function( $att ) use ( $gallery_ids ) {
-                return ! in_array( $att->ID, $gallery_ids );
-            } );
-            if ( ! empty( $non_gallery ) ) {
-                echo '<div class="hotel-media-section">';
-                echo '<p><strong>📎 ' . esc_html__( 'Other Attached Images', 'seminargo' ) . ' (' . count( $non_gallery ) . ')</strong></p>';
-                echo '<div class="hotel-media-gallery">';
-                foreach ( array_slice( $non_gallery, 0, 6 ) as $attachment ) {
-                    $img = wp_get_attachment_image( $attachment->ID, 'thumbnail', false, [ 'loading' => 'lazy' ] );
-                    if ( $img ) {
-                        $edit_url = admin_url( 'post.php?post=' . $attachment->ID . '&action=edit' );
-                        echo '<a href="' . esc_url( $edit_url ) . '" target="_blank" class="hotel-media-thumb" title="' . esc_attr__( 'Click to edit', 'seminargo' ) . '">';
-                        echo $img;
-                        echo '</a>';
-                    }
-                }
-                echo '</div>';
-                echo '</div>';
-            }
+            echo '<p style="color: #999; font-style: italic; text-align: center; padding: 20px;">' . esc_html__( 'No images from API', 'seminargo' ) . '</p>';
         }
 
-        // API Media Info (for reference)
-        echo '<div class="hotel-media-section">';
-        echo '<p><strong>ℹ️ ' . esc_html__( 'API Media Info', 'seminargo' ) . '</strong></p>';
-        echo '<div class="hotel-media-count">';
-        echo '📊 ' . sprintf( esc_html__( '%d images from API', 'seminargo' ), count( $medias ) ) . '<br>';
-        echo '💾 ' . sprintf( esc_html__( '%d images in WordPress', 'seminargo' ), count( $gallery_ids ) ) . '<br>';
-        echo '📁 ' . sprintf( esc_html__( '%d total attachments', 'seminargo' ), count( $all_attachments ) );
-        echo '</div>';
+        // Info message
+        echo '<div style="margin-top: 12px; padding: 10px; background: #f0f9ff; border-left: 3px solid #2271b1; border-radius: 4px; font-size: 11px; color: #1e40af;">';
+        echo '<strong>ℹ️ ' . esc_html__( 'Images displayed via API', 'seminargo' ) . '</strong><br>';
+        echo esc_html__( 'Images load directly from API servers. No local storage needed.', 'seminargo' );
         echo '</div>';
     }
 
@@ -720,7 +699,8 @@ class Seminargo_Hotel_Importer {
         $fields = [
             'hotel_id'                    => __( 'API Hotel ID', 'seminargo' ),
             'ref_code'                    => __( 'Reference Code', 'seminargo' ),
-            'api_slug'                    => __( 'API Slug', 'seminargo' ),
+            'api_slug'                    => __( 'API Slug (Current)', 'seminargo' ),
+            'mig_slug'                    => __( 'Old Slug (migSlug)', 'seminargo' ),
             'shop_url'                    => __( 'Shop URL', 'seminargo' ),
             'space_id'                    => __( 'Space ID', 'seminargo' ),
             'space_name'                  => __( 'Space Name', 'seminargo' ),
@@ -757,260 +737,399 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
+     * Render Debug Image URLs meta box
+     * Shows all API image URLs for debugging
+     */
+    public function render_debug_image_urls_meta_box( $post ) {
+        $medias_json = get_post_meta( $post->ID, 'medias_json', true );
+        $medias = json_decode( $medias_json, true ) ?: [];
+
+        if ( empty( $medias ) ) {
+            echo '<p style="color: #999;">' . esc_html__( 'No API image data available', 'seminargo' ) . '</p>';
+            return;
+        }
+
+        echo '<p style="font-size: 12px; color: #666; margin-bottom: 15px;">';
+        echo sprintf( esc_html__( 'Showing %d image URLs from API (stored in medias_json)', 'seminargo' ), count( $medias ) );
+        echo '</p>';
+
+        echo '<div style="max-height: 400px; overflow-y: auto; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">';
+        echo '<table style="width: 100%; font-size: 11px; border-collapse: collapse;">';
+        echo '<thead>';
+        echo '<tr style="background: #fff; position: sticky; top: 0;">';
+        echo '<th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">#</th>';
+        echo '<th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Name</th>';
+        echo '<th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">URL (Full)</th>';
+        echo '<th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Preview URL</th>';
+        echo '</tr>';
+        echo '</thead>';
+        echo '<tbody>';
+
+        foreach ( $medias as $index => $media ) {
+            $url = $media['url'] ?? '';
+            $preview_url = $media['previewUrl'] ?? '';
+            $name = $media['name'] ?? 'N/A';
+            $id = $media['id'] ?? '';
+
+            $bg_color = ( $index % 2 === 0 ) ? '#fff' : '#f5f5f5';
+
+            echo '<tr style="background: ' . $bg_color . ';">';
+            echo '<td style="padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top;"><strong>' . esc_html( $index ) . '</strong></td>';
+            echo '<td style="padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top;">';
+            echo '<strong>' . esc_html( $name ) . '</strong><br>';
+            echo '<small style="color: #999;">ID: ' . esc_html( $id ) . '</small>';
+            echo '</td>';
+            echo '<td style="padding: 8px; border-bottom: 1px solid #ddd; word-break: break-all; font-family: monospace; vertical-align: top;">';
+            if ( $url ) {
+                echo '<a href="' . esc_url( $url ) . '" target="_blank" style="color: #2271b1;">' . esc_html( $url ) . '</a>';
+            } else {
+                echo '<span style="color: #999;">-</span>';
+            }
+            echo '</td>';
+            echo '<td style="padding: 8px; border-bottom: 1px solid #ddd; word-break: break-all; font-family: monospace; vertical-align: top;">';
+            if ( $preview_url ) {
+                echo '<a href="' . esc_url( $preview_url ) . '" target="_blank" style="color: #2271b1;">' . esc_html( $preview_url ) . '</a>';
+            } else {
+                echo '<span style="color: #999;">-</span>';
+            }
+            echo '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody>';
+        echo '</table>';
+        echo '</div>';
+
+        echo '<p style="margin-top: 10px; font-size: 11px; color: #666;">';
+        echo '💡 <strong>Note:</strong> These are the URLs stored from the API. ';
+        echo 'WordPress downloads these during Phase 2. ';
+        echo 'If URLs change in the API, Phase 1 updates this data, and Phase 2 will download new images.';
+        echo '</p>';
+    }
+
+    /**
      * Render admin page
      */
     public function render_admin_page() {
         $last_import = get_option( $this->last_import_option, [] );
         $next_scheduled = wp_next_scheduled( 'seminargo_hotels_cron' );
+        $total_hotels = wp_count_posts( 'hotel' )->publish;
         ?>
-        <div class="wrap">
-            <h1>🏨 <?php esc_html_e( 'Hotel Import / Sync', 'seminargo' ); ?></h1>
-
-            <div class="seminargo-import-dashboard" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 20px;">
-
-                <!-- Status Card -->
-                <div class="card" style="padding: 20px;">
-                    <h2>📊 <?php esc_html_e( 'Import Status', 'seminargo' ); ?></h2>
-                    <table class="widefat" style="margin-top: 15px;">
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Last Import:', 'seminargo' ); ?></strong></td>
-                            <td><?php echo ! empty( $last_import['time'] ) ? esc_html( date_i18n( 'Y-m-d H:i:s', $last_import['time'] ) ) : esc_html__( 'Never', 'seminargo' ); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Next Scheduled:', 'seminargo' ); ?></strong></td>
-                            <td><?php echo $next_scheduled ? esc_html( date_i18n( 'Y-m-d H:i:s', $next_scheduled ) ) : esc_html__( 'Not scheduled', 'seminargo' ); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Hotels Created:', 'seminargo' ); ?></strong></td>
-                            <td id="stat-created"><?php echo esc_html( $last_import['created'] ?? 0 ); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Hotels Updated:', 'seminargo' ); ?></strong></td>
-                            <td id="stat-updated"><?php echo esc_html( $last_import['updated'] ?? 0 ); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Hotels Drafted (Removed):', 'seminargo' ); ?></strong></td>
-                            <td id="stat-drafted"><?php echo esc_html( $last_import['drafted'] ?? 0 ); ?></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Errors:', 'seminargo' ); ?></strong></td>
-                            <td id="stat-errors"><?php echo esc_html( $last_import['errors'] ?? 0 ); ?></td>
-                        </tr>
-                    </table>
-
-                    <div style="margin-top: 20px;">
-                        <button id="btn-fetch-now" class="button button-primary button-hero">
-                            🔄 <?php esc_html_e( 'Fetch Now', 'seminargo' ); ?>
-                        </button>
-                        <button id="btn-skip-to-phase2" class="button" style="margin-left: 10px; background: #f59e0b; color: white; border-color: #f59e0b;" title="Debug: Skip Phase 1 and start directly with Phase 2 (image downloads)">
-                            📸 <?php esc_html_e( 'Skip to Phase 2 (Debug)', 'seminargo' ); ?>
-                        </button>
-                        <button id="btn-clear-logs" class="button" style="margin-left: 10px;">
-                            🗑️ <?php esc_html_e( 'Clear Logs', 'seminargo' ); ?>
-                        </button>
-                        <button id="btn-delete-all-hotels" class="button" style="margin-left: 10px; background: #dc3232; color: white; border-color: #dc3232;">
-                            💣 <?php esc_html_e( 'Delete All Hotels', 'seminargo' ); ?>
-                        </button>
-                    </div>
-
-                    <div id="import-progress" style="display: none; margin-top: 20px;">
-                        <!-- Current Phase -->
-                        <div style="background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin-bottom: 20px;">
-                            <h3 style="margin: 0 0 15px 0; font-size: 16px;">
-                                <span id="phase-icon">🚀</span>
-                                <span id="phase-name">Starting Import...</span>
-                            </h3>
-
-                            <!-- Overall Progress Bar -->
-                            <div style="margin-bottom: 10px;">
-                                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                    <strong>Overall Progress</strong>
-                                    <span id="overall-percent">0%</span>
-                                </div>
-                                <div style="background: #f0f0f0; border-radius: 4px; padding: 3px; height: 30px;">
-                                    <div id="progress-bar" style="background: linear-gradient(90deg, #AC2A6E, #d64a94); height: 24px; border-radius: 3px; width: 0%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;"></div>
-                                </div>
+        <div class="wrap seminargo-sync-page">
+            <div class="seminargo-sync-header" style="background: linear-gradient(135deg, #AC2A6E 0%, #8A1F56 100%); color: white; margin: 0 0 32px 0; padding: 32px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: start; gap: 24px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <h1 style="margin: 0 0 12px 0; font-size: 32px; color: white;">🏨 <?php esc_html_e( 'Hotel Synchronisation', 'seminargo' ); ?></h1>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; opacity: 0.95;">
+                            <div>
+                                <div style="font-size: 11px; opacity: 0.8; margin-bottom: 4px;"><?php esc_html_e( 'Total Hotels', 'seminargo' ); ?></div>
+                                <div style="font-size: 20px; font-weight: 600;"><?php echo number_format( $total_hotels ); ?></div>
                             </div>
-
-                            <!-- Current Action -->
-                            <div style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 4px;">
-                                <div style="font-size: 13px; color: #666;">
-                                    <strong>Current Action:</strong> <span id="current-action">Initializing...</span>
-                                </div>
+                            <div>
+                                <div style="font-size: 11px; opacity: 0.8; margin-bottom: 4px;"><?php esc_html_e( 'Last Sync', 'seminargo' ); ?></div>
+                                <div style="font-size: 16px; font-weight: 500;"><?php echo ! empty( $last_import['time'] ) ? date_i18n( 'j. M Y, H:i', $last_import['time'] ) : __( 'Never', 'seminargo' ); ?></div>
                             </div>
-
-                            <!-- Phase Details -->
-                            <div id="phase-details" style="margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
-                                <div style="padding: 10px; background: #f0f9ff; border-radius: 4px; border-left: 3px solid #2271b1;">
-                                    <div style="font-size: 11px; color: #666; text-transform: uppercase;">Hotels Processed</div>
-                                    <div style="font-size: 20px; font-weight: bold; color: #2271b1;"><span id="hotels-processed">0</span> / <span id="hotels-total">0</span></div>
-                                </div>
-                                <div style="padding: 10px; background: #f0fdf4; border-radius: 4px; border-left: 3px solid #10b981;">
-                                    <div style="font-size: 11px; color: #666; text-transform: uppercase;">Created</div>
-                                    <div style="font-size: 20px; font-weight: bold; color: #10b981;" id="live-created">0</div>
-                                </div>
-                                <div style="padding: 10px; background: #fffbeb; border-radius: 4px; border-left: 3px solid #f59e0b;">
-                                    <div style="font-size: 11px; color: #666; text-transform: uppercase;">Updated</div>
-                                    <div style="font-size: 20px; font-weight: bold; color: #f59e0b;" id="live-updated">0</div>
-                                </div>
-                                <div style="padding: 10px; background: #fef2f2; border-radius: 4px; border-left: 3px solid #ef4444;">
-                                    <div style="font-size: 11px; color: #666; text-transform: uppercase;">Images</div>
-                                    <div style="font-size: 20px; font-weight: bold; color: #ef4444;"><span id="images-processed">0</span></div>
-                                </div>
-                            </div>
-
-                            <!-- Time Estimate -->
-                            <div style="margin-top: 15px; padding: 10px; background: #fffbeb; border-radius: 4px; border-left: 3px solid #f59e0b;">
-                                <div style="font-size: 12px;">
-                                    <strong>⏱️ Elapsed:</strong> <span id="time-elapsed">0s</span> |
-                                    <strong>Estimated Remaining:</strong> <span id="time-remaining">Calculating...</span>
-                                </div>
+                            <div>
+                                <div style="font-size: 11px; opacity: 0.8; margin-bottom: 4px;"><?php esc_html_e( 'Next Scheduled', 'seminargo' ); ?></div>
+                                <div style="font-size: 16px; font-weight: 500;"><?php echo $next_scheduled ? date_i18n( 'j. M, H:i', $next_scheduled ) : __( 'Not scheduled', 'seminargo' ); ?></div>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- API Info Card -->
-                <div class="card" style="padding: 20px;">
-                    <h2>🔌 <?php esc_html_e( 'API Configuration', 'seminargo' ); ?></h2>
-                    
-                    <!-- Environment Toggle Switch -->
-                    <div style="margin-bottom: 20px; padding: 15px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb;">
-                        <h3 style="margin: 0 0 15px 0; font-size: 14px;">🔀 <?php esc_html_e( 'Environment', 'seminargo' ); ?></h3>
-                        <?php
-                        $current_env = seminargo_get_environment();
-                        $is_production = $current_env === 'production';
-                        ?>
-                        <form method="post" action="" id="seminargo-environment-form" style="margin: 0;">
-                            <?php wp_nonce_field( 'seminargo_environment_nonce' ); ?>
-                            <input type="hidden" name="action" value="seminargo_toggle_environment">
-                            <input type="hidden" name="seminargo_environment" id="environment-value" value="<?php echo esc_attr( $current_env ); ?>">
-                            
-                            <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
-                                <div style="flex: 1;">
-                                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #f59e0b;">
-                                        🟡 <?php esc_html_e( 'Staging', 'seminargo' ); ?>
-                                    </div>
-                                    <div style="font-size: 11px; color: #666;">
-                                        <?php esc_html_e( 'Development', 'seminargo' ); ?>
-                                    </div>
-                                </div>
-                                
-                                <div style="position: relative;">
-                                    <label class="seminargo-toggle-switch" style="cursor: pointer;">
-                                        <input type="checkbox" id="environment-toggle" <?php checked( $is_production ); ?>>
-                                        <span class="seminargo-toggle-slider"></span>
-                                    </label>
-                                </div>
-                                
-                                <div style="flex: 1; text-align: right;">
-                                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #10b981;">
-                                        🟢 <?php esc_html_e( 'Production', 'seminargo' ); ?>
-                                    </div>
-                                    <div style="font-size: 11px; color: #666;">
-                                        <?php esc_html_e( 'Live Site', 'seminargo' ); ?>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div id="toggle-status" style="padding: 10px; background: <?php echo $is_production ? '#d1fae5' : '#fef3c7'; ?>; border-radius: 4px; margin-bottom: 10px; text-align: center; font-weight: 600; font-size: 12px; color: <?php echo $is_production ? '#065f46' : '#92400e'; ?>;">
-                                <?php if ( $is_production ) : ?>
-                                    🟢 <?php esc_html_e( 'PRODUCTION', 'seminargo' ); ?>
-                                <?php else : ?>
-                                    🟡 <?php esc_html_e( 'STAGING', 'seminargo' ); ?>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <button type="submit" class="button button-primary" id="save-environment-btn" style="width: 100%;">
-                                <?php esc_html_e( 'Save Environment', 'seminargo' ); ?>
-                            </button>
-                        </form>
-                    </div>
-                    
-                    <table class="widefat" style="margin-top: 15px;">
-                        <tr>
-                            <td><strong><?php esc_html_e( 'API Endpoint:', 'seminargo' ); ?></strong></td>
-                            <td><code style="font-size: 11px;"><?php echo esc_html( $this->api_url ); ?></code></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Finder Base URL:', 'seminargo' ); ?></strong></td>
-                            <td><code style="font-size: 11px;"><?php echo esc_html( $this->finder_base_url ); ?></code></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Platform Widget URL:', 'seminargo' ); ?></strong></td>
-                            <td><code style="font-size: 11px;"><?php echo esc_html( seminargo_get_platform_widget_url() ); ?></code></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Platform Widget JS:', 'seminargo' ); ?></strong></td>
-                            <td><code style="font-size: 11px;"><?php echo esc_html( seminargo_get_platform_widget_js_url() ); ?></code></td>
-                        </tr>
-                        <tr>
-                            <td><strong><?php esc_html_e( 'Cron Schedule:', 'seminargo' ); ?></strong></td>
-                            <td><?php esc_html_e( 'Every 12 hours (twicedaily)', 'seminargo' ); ?></td>
-                        </tr>
-                    </table>
-
-                    <h3 style="margin-top: 20px;">ℹ️ <?php esc_html_e( '"Fetch Now" - How it works', 'seminargo' ); ?></h3>
-                    <ul style="list-style: disc; margin-left: 20px; color: #666; font-size: 13px;">
-                        <li><strong>Batched Processing:</strong> Processes 200 hotels at a time in background</li>
-                        <li><strong>No Timeouts:</strong> Each batch completes in < 60s, works on WP Engine!</li>
-                        <li><strong>Live Progress:</strong> UI updates every 2 seconds with real-time stats</li>
-                        <li><strong>Phase 1:</strong> Creates/updates all hotel posts (~10 min)</li>
-                        <li><strong>Phase 2:</strong> Downloads images for all hotels (~20-30 min)</li>
-                        <li><strong>Total Time:</strong> ~30-40 minutes for full import with 4815 hotels</li>
-                    </ul>
-                    <div style="margin-top: 15px; padding: 10px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 3px;">
-                        <strong style="color: #059669;">✅ Production Ready:</strong>
-                        <span style="color: #059669; font-size: 12px;">Works on WP Engine, shared hosting, and all environments!</span>
-                    </div>
-                </div>
-
-                <!-- Auto-Import Card -->
-                <div class="card" style="padding: 20px;">
-                    <h2>🤖 <?php esc_html_e( 'Automatic Import (Ongoing Sync)', 'seminargo' ); ?></h2>
-                    <p style="color: #666; font-size: 13px; margin-top: 10px;">
-                        <?php esc_html_e( 'Automatically syncs hotel data in batches (500 at a time) every hour. Checks for changes and updates hotels WITHOUT re-downloading images. Perfect for daily sync!', 'seminargo' ); ?>
-                    </p>
-
-                    <div id="auto-import-status" style="margin-top: 15px;">
-                        <p><?php esc_html_e( 'Loading status...', 'seminargo' ); ?></p>
-                    </div>
-
-                    <div style="margin-top: 15px;">
-                        <button id="btn-toggle-auto-import" class="button button-primary">
-                            🔄 <?php esc_html_e( 'Enable Auto-Import', 'seminargo' ); ?>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                        <button id="btn-fetch-now" class="button" style="background: rgba(255,255,255,0.95); color: #AC2A6E; border: 1px solid rgba(255,255,255,0.3); padding: 6px 16px; font-size: 13px; font-weight: 600;">
+                            🔄 <?php esc_html_e( 'Start Sync', 'seminargo' ); ?>
                         </button>
-                        <button id="btn-reset-progress" class="button" style="margin-left: 10px;">
-                            ↻ <?php esc_html_e( 'Reset Progress', 'seminargo' ); ?>
+                        <button id="btn-stop-import" class="button" style="display: none; background: rgba(239, 68, 68, 0.9); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 16px; font-size: 13px; backdrop-filter: blur(10px);">
+                            ⏹ <?php esc_html_e( 'Stop', 'seminargo' ); ?>
                         </button>
-                    </div>
-
-                    <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; border-left: 3px solid #2271b1; border-radius: 3px;">
-                        <strong>💡 How Auto-Import Works:</strong>
-                        <ul style="margin: 10px 0 0 20px; font-size: 12px;">
-                            <li>Processes 500 hotels per hour (fast - no timeouts)</li>
-                            <li><strong>Syncs hotel data</strong> (name, address, rooms, etc.)</li>
-                            <li><strong>Skips images</strong> if already downloaded (fast updates)</li>
-                            <li>New hotels get images via manual "Fetch Now" or WP-CLI</li>
-                            <li>Perfect for ongoing daily/hourly sync on WP Engine</li>
-                        </ul>
+                        <button id="btn-resume-import" class="button" style="display: none; background: rgba(16, 185, 129, 0.9); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 16px; font-size: 13px; backdrop-filter: blur(10px);">
+                            ▶ <?php esc_html_e( 'Resume', 'seminargo' ); ?>
+                        </button>
+                        <button id="btn-clear-logs" class="button" style="background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 6px 16px; font-size: 13px;">
+                            🗑️ <?php esc_html_e( 'Clear Logs', 'seminargo' ); ?>
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Logs Section -->
-            <div class="card" style="padding: 20px; margin-top: 20px;">
-                <h2>📋 <?php esc_html_e( 'Import Logs', 'seminargo' ); ?></h2>
-                <div style="margin-bottom: 15px;">
-                    <label>
-                        <input type="checkbox" id="filter-errors" /> <?php esc_html_e( 'Show only errors', 'seminargo' ); ?>
+            <!-- Full-Width Progress Bar (when sync running) -->
+            <div id="sync-progress-hero" style="display: none; margin-bottom: 32px;">
+                <div style="background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span id="phase-icon" style="font-size: 32px;">🚀</span>
+                            <div>
+                                <h2 id="phase-name" style="margin: 0; font-size: 20px; color: #111827;">Starting Import...</h2>
+                                <p id="current-action" style="margin: 4px 0 0 0; color: #6b7280; font-size: 14px;">Initializing...</p>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 48px; font-weight: 700; color: #AC2A6E; line-height: 1;" id="overall-percent">0%</div>
+                            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                                <span id="time-elapsed">0s</span> | ETA: <span id="time-remaining">...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Full-width progress bar -->
+                    <div style="background: #f3f4f6; border-radius: 12px; height: 24px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);">
+                        <div id="progress-bar" style="background: linear-gradient(90deg, #AC2A6E 0%, #d64a94 100%); height: 100%; width: 0%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 12px; box-shadow: 0 2px 8px rgba(172, 42, 110, 0.3);"></div>
+                    </div>
+
+                    <!-- Stats Grid -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 20px;">
+                        <div style="background: #f0f9ff; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Hotels</div>
+                            <div style="font-size: 24px; font-weight: 700; color: #2271b1;"><span id="hotels-processed">0</span> / <span id="hotels-total">0</span></div>
+                        </div>
+                        <div style="background: #f0fdf4; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Created</div>
+                            <div style="font-size: 24px; font-weight: 700; color: #10b981;" id="live-created">0</div>
+                        </div>
+                        <div style="background: #fffbeb; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Updated</div>
+                            <div style="font-size: 24px; font-weight: 700; color: #f59e0b;" id="live-updated">0</div>
+                        </div>
+                        <div style="background: #fef2f2; padding: 12px; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Errors</div>
+                            <div style="font-size: 24px; font-weight: 700; color: #ef4444;"><span id="live-errors">0</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- MASSIVE Live Logs Area (Primary Focus) -->
+            <div style="background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 24px;">
+                <h2 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #111827;">
+                    📋 <?php esc_html_e( 'Live Sync Logs', 'seminargo' ); ?>
+                </h2>
+                <div style="margin-bottom: 16px; display: flex; gap: 20px; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="filter-errors" style="width: 18px; height: 18px;" />
+                        <span style="font-size: 14px; color: #374151;"><?php esc_html_e( 'Only errors', 'seminargo' ); ?></span>
                     </label>
-                    <label style="margin-left: 15px;">
-                        <input type="checkbox" id="filter-updates" /> <?php esc_html_e( 'Show only updates', 'seminargo' ); ?>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="filter-updates" style="width: 18px; height: 18px;" />
+                        <span style="font-size: 14px; color: #374151;"><?php esc_html_e( 'Only updates', 'seminargo' ); ?></span>
                     </label>
                 </div>
-                <div id="logs-container" style="max-height: 500px; overflow-y: auto; background: #1d2327; color: #fff; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px;">
-                    <p style="color: #72aee6;"><?php esc_html_e( 'Loading logs...', 'seminargo' ); ?></p>
+                <div id="logs-container" style="max-height: 800px; min-height: 400px; overflow-y: auto; background: #1d2327; color: #fff; padding: 20px; border-radius: 6px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 13px; line-height: 1.6; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                    <p style="color: #72aee6;"><?php esc_html_e( 'No logs yet. Click "Start Sync" to begin.', 'seminargo' ); ?></p>
+                </div>
+            </div>
+
+            <!-- Advanced Settings (Collapsible) -->
+            <div style="margin-bottom: 24px;">
+                <h2 style="margin-bottom: 16px; font-size: 24px; font-weight: 700; color: #111827;">
+                    ⚙️ <?php esc_html_e( 'Advanced Settings', 'seminargo' ); ?>
+                </h2>
+
+                <!-- Environment Configuration -->
+                <details class="settings-accordion" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; font-size: 16px; font-weight: 600; color: #374151; user-select: none; list-style: none;">
+                        <span>🔀 <?php esc_html_e( 'Environment Configuration', 'seminargo' ); ?></span>
+                    </summary>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f3f4f6;">
+                        <?php
+                        $current_env = seminargo_get_environment();
+                        $is_production = $current_env === 'production';
+                        ?>
+                        <form method="post" action="" id="seminargo-environment-form">
+                            <?php wp_nonce_field( 'seminargo_environment_nonce' ); ?>
+                            <input type="hidden" name="action" value="seminargo_toggle_environment">
+                            <input type="hidden" name="seminargo_environment" id="environment-value" value="<?php echo esc_attr( $current_env ); ?>">
+
+                            <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
+                                <div style="flex: 1; text-align: center;">
+                                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #f59e0b;">🟡 Staging</div>
+                                    <div style="font-size: 11px; color: #666;">Development</div>
+                                </div>
+
+                                <label class="seminargo-toggle-switch" style="cursor: pointer;">
+                                    <input type="checkbox" id="environment-toggle" <?php checked( $is_production ); ?>>
+                                    <span class="seminargo-toggle-slider"></span>
+                                </label>
+
+                                <div style="flex: 1; text-align: center;">
+                                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #10b981;">🟢 Production</div>
+                                    <div style="font-size: 11px; color: #666;">Live Site</div>
+                                </div>
+                            </div>
+
+                            <div id="toggle-status" style="padding: 12px; background: <?php echo $is_production ? '#d1fae5' : '#fef3c7'; ?>; border-radius: 6px; margin-bottom: 12px; text-align: center; font-weight: 600; font-size: 14px; color: <?php echo $is_production ? '#065f46' : '#92400e'; ?>;">
+                                <?php echo $is_production ? '🟢 PRODUCTION' : '🟡 STAGING'; ?>
+                            </div>
+
+                            <button type="submit" class="button button-primary" id="save-environment-btn" style="width: 100%; padding: 12px;">
+                                <?php esc_html_e( 'Save Environment', 'seminargo' ); ?>
+                            </button>
+                        </form>
+                    </div>
+                </details>
+
+                <!-- Auto-Import Settings -->
+                <details class="settings-accordion" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; font-size: 16px; font-weight: 600; color: #374151; user-select: none; list-style: none;">
+                        <span>🤖 <?php esc_html_e( 'Auto-Import Settings', 'seminargo' ); ?></span>
+                    </summary>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f3f4f6;">
+                        <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
+                            <?php esc_html_e( 'Automatically syncs every 4 hours (6x daily). Full sync weekly, incremental 6 times per day.', 'seminargo' ); ?>
+                        </p>
+
+                        <div id="auto-import-status" style="margin-bottom: 16px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+                            <p style="margin: 0; color: #6b7280;"><?php esc_html_e( 'Loading status...', 'seminargo' ); ?></p>
+                        </div>
+
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <button id="btn-toggle-auto-import" class="button button-primary">
+                                <?php esc_html_e( 'Enable Auto-Import', 'seminargo' ); ?>
+                            </button>
+                            <button id="btn-reset-progress" class="button">
+                                ↻ <?php esc_html_e( 'Reset Progress', 'seminargo' ); ?>
+                            </button>
+                            <button id="btn-fix-schedule" class="button" style="background: #f59e0b; color: white; border-color: #f59e0b;">
+                                🔧 <?php esc_html_e( 'Fix Schedule (4h)', 'seminargo' ); ?>
+                            </button>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Duplicate Cleanup -->
+                <details class="settings-accordion" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; font-size: 16px; font-weight: 600; color: #374151; user-select: none; list-style: none;">
+                        <span>🔍 <?php esc_html_e( 'Duplicate Hotel Cleanup', 'seminargo' ); ?></span>
+                    </summary>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f3f4f6;">
+                        <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
+                            <?php esc_html_e( 'Find and remove duplicate hotels. Duplicates detected by matching hotel_id or ref_code.', 'seminargo' ); ?>
+                        </p>
+
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px;">
+                            <button id="btn-find-duplicates" class="button" style="background: #f59e0b; color: white; border-color: #f59e0b;">
+                                🔍 <?php esc_html_e( 'Find Duplicates', 'seminargo' ); ?>
+                            </button>
+                            <button id="btn-cleanup-duplicates-dry" class="button" style="background: #3b82f6; color: white; border-color: #3b82f6;">
+                                🧪 <?php esc_html_e( 'Dry Run', 'seminargo' ); ?>
+                            </button>
+                            <button id="btn-cleanup-duplicates" class="button" style="background: #dc3232; color: white; border-color: #dc3232;">
+                                🗑️ <?php esc_html_e( 'Remove Duplicates', 'seminargo' ); ?>
+                            </button>
+                        </div>
+
+                        <div id="duplicate-results" style="display: none;">
+                            <div id="duplicate-summary" style="padding: 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 10px;"></div>
+                            <div id="duplicate-details" style="max-height: 400px; overflow-y: auto; padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 12px;"></div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Image Management (NEW) -->
+                <details class="settings-accordion" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; font-size: 16px; font-weight: 600; color: #374151; user-select: none; list-style: none;">
+                        <span>🖼️ <?php esc_html_e( 'Image Management', 'seminargo' ); ?></span>
+                    </summary>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f3f4f6;">
+                        <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
+                            <?php esc_html_e( 'Manage hotel images in the WordPress media library.', 'seminargo' ); ?>
+                        </p>
+
+                        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <button id="btn-delete-hotel-images" class="button" style="background: #dc3232; color: white; border-color: #dc3232;">
+                                🗑️ <?php esc_html_e( 'Delete Hotel Images', 'seminargo' ); ?>
+                            </button>
+                            <button id="btn-delete-all-hotels" class="button" style="background: #ef4444; color: white; border-color: #ef4444;">
+                                💣 <?php esc_html_e( 'Delete All Hotels & Images', 'seminargo' ); ?>
+                            </button>
+                        </div>
+
+                        <p style="margin-top: 12px; font-size: 13px; color: #991b1b; background: #fef2f2; padding: 12px; border-radius: 6px; border-left: 3px solid #dc2626;">
+                            ⚠️ <strong>Delete Hotel Images:</strong> Removes all hotel attachments from media library (hotel posts kept)<br>
+                            ⚠️ <strong>Delete All Hotels:</strong> Removes everything (posts + images)
+                        </p>
+                    </div>
+                </details>
+
+                <!-- Newsletter Settings -->
+                <details class="settings-accordion" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; font-size: 16px; font-weight: 600; color: #374151; user-select: none; list-style: none;">
+                        <span>📧 <?php esc_html_e( 'Newsletter Settings (Brevo)', 'seminargo' ); ?></span>
+                    </summary>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f3f4f6;">
+                        <?php $brevo_api_key = get_option( 'seminargo_brevo_api_key', '' ); ?>
+                        <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
+                            <?php esc_html_e( 'Configure Brevo API key for newsletter integration (footer + hotel newsletter landing page).', 'seminargo' ); ?>
+                        </p>
+
+                        <div style="margin-bottom: 16px;">
+                            <label for="brevo-api-key" style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">
+                                <?php esc_html_e( 'Brevo API Key', 'seminargo' ); ?>
+                            </label>
+                            <input type="text" id="brevo-api-key" value="<?php echo esc_attr( $brevo_api_key ); ?>"
+                                   placeholder="xkeysib-..."
+                                   style="width: 100%; padding: 10px 12px; border: 2px solid #e5e7eb; border-radius: 6px; font-family: monospace; font-size: 13px;">
+                            <p style="margin-top: 6px; font-size: 12px; color: #6b7280;">
+                                <?php esc_html_e( 'Get your API key from: Brevo Dashboard → Account → API Keys', 'seminargo' ); ?>
+                            </p>
+                        </div>
+
+                        <button type="button" id="save-brevo-api-key" class="button button-primary">
+                            💾 <?php esc_html_e( 'Save API Key', 'seminargo' ); ?>
+                        </button>
+
+                        <?php if ( ! empty( $brevo_api_key ) ) : ?>
+                            <span style="margin-left: 12px; color: #10b981; font-size: 14px;">✅ <?php esc_html_e( 'API Key configured', 'seminargo' ); ?></span>
+                        <?php else : ?>
+                            <span style="margin-left: 12px; color: #ef4444; font-size: 14px;">⚠️ <?php esc_html_e( 'API Key not set', 'seminargo' ); ?></span>
+                        <?php endif; ?>
+                    </div>
+                </details>
+
+                <!-- API Configuration -->
+                <details class="settings-accordion" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <summary style="cursor: pointer; font-size: 16px; font-weight: 600; color: #374151; user-select: none; list-style: none;">
+                        <span>🔌 <?php esc_html_e( 'API Configuration & Info', 'seminargo' ); ?></span>
+                    </summary>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f3f4f6;">
+                        <table style="width: 100%; font-size: 13px;">
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: 600; color: #374151;">API Endpoint:</td>
+                                <td style="padding: 8px 0;"><code style="font-size: 11px; background: #f9fafb; padding: 4px 8px; border-radius: 4px;"><?php echo esc_html( $this->api_url ); ?></code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: 600; color: #374151;">Finder Base URL:</td>
+                                <td style="padding: 8px 0;"><code style="font-size: 11px; background: #f9fafb; padding: 4px 8px; border-radius: 4px;"><?php echo esc_html( $this->finder_base_url ); ?></code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; font-weight: 600; color: #374151;">Cron Schedule:</td>
+                                <td style="padding: 8px 0;">Every 4 hours (6x daily)</td>
+                            </tr>
+                        </table>
+
+                        <div style="margin-top: 16px; padding: 12px; background: #f0f9ff; border-left: 3px solid #2271b1; border-radius: 4px;">
+                            <p style="margin: 0; font-size: 13px; color: #1e40af;"><strong>ℹ️ Sync Process:</strong> Batched processing (200 hotels/batch) | ~10-15 min for 4800 hotels | Images via API URLs</p>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Sync History Section -->
+            <div style="background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 24px;">
+                <h2 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #111827;">
+                    📅 <?php esc_html_e( 'Sync History', 'seminargo' ); ?>
+                </h2>
+                <p style="color: #666; font-size: 13px; margin-top: 10px;">
+                    <?php esc_html_e( 'View past sync runs including completed, stuck, and failed imports. Each entry shows stats, duration, and last 100 log entries.', 'seminargo' ); ?>
+                </p>
+                <button id="btn-load-history" class="button" style="margin-top: 15px;">
+                    📜 <?php esc_html_e( 'Load Sync History', 'seminargo' ); ?>
+                </button>
+                <button id="btn-refresh-history" class="button" style="margin-left: 10px; display: none;">
+                    🔄 <?php esc_html_e( 'Refresh', 'seminargo' ); ?>
+                </button>
+                <div id="sync-history-container" style="margin-top: 20px; display: none;">
+                    <p style="color: #868e96;"><?php esc_html_e( 'Loading history...', 'seminargo' ); ?></p>
                 </div>
             </div>
         </div>
@@ -1077,6 +1196,52 @@ class Seminargo_Hotel_Importer {
             
             .seminargo-toggle-switch input:focus + .seminargo-toggle-slider {
                 box-shadow: 0 0 1px #10b981;
+            }
+
+            /* Progress bar animation for duplicate cleanup */
+            @keyframes progress-pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.7; }
+            }
+
+            /* Accordion styling */
+            .settings-accordion summary {
+                cursor: pointer;
+                user-select: none;
+                transition: color 0.2s ease;
+            }
+
+            .settings-accordion summary::-webkit-details-marker {
+                display: none;
+            }
+
+            .settings-accordion summary::before {
+                content: '▶';
+                display: inline-block;
+                margin-right: 8px;
+                font-size: 12px;
+                transition: transform 0.3s ease;
+                color: #AC2A6E;
+            }
+
+            .settings-accordion[open] summary::before {
+                transform: rotate(90deg);
+            }
+
+            .settings-accordion summary:hover {
+                color: #AC2A6E;
+            }
+
+            /* Responsive */
+            @media (max-width: 768px) {
+                #logs-container {
+                    max-height: 400px !important;
+                    min-height: 300px !important;
+                }
+                .seminargo-sync-header {
+                    margin-left: 0 !important;
+                    margin-right: 0 !important;
+                }
             }
         </style>
 
@@ -1195,8 +1360,8 @@ class Seminargo_Hotel_Importer {
                         $('#live-created').text(created);
                         $('#live-updated').text(updated);
 
-                        // Progress is 10-50% for Phase 1
-                        var overallPercent = 10 + (percent * 0.4);
+                        // Progress is 10-90% for Phase 1
+                        var overallPercent = 10 + (percent * 0.8);
                         $('#progress-bar').css('width', overallPercent + '%').text(Math.round(overallPercent) + '%');
                         $('#overall-percent').text(Math.round(overallPercent) + '%');
                         $('#current-action').text('Processing hotel ' + processed + ' of ' + total + '...');
@@ -1218,58 +1383,11 @@ class Seminargo_Hotel_Importer {
                 else if (message.includes('PHASE 1 COMPLETE')) {
                     $('#phase-icon').text('✅');
                     $('#phase-name').text('Phase 1 Complete!');
-                    $('#current-action').text('All hotels created successfully. Starting image downloads...');
-                    $('#progress-bar').css('width', '50%').text('50%');
-                    $('#overall-percent').text('50%');
+                    $('#current-action').text('All hotels synced successfully. Finalizing...');
+                    $('#progress-bar').css('width', '90%').text('90%');
+                    $('#overall-percent').text('90%');
                 }
-                else if (message.includes('PHASE 2:')) {
-                    $('#phase-icon').text('📸');
-                    $('#phase-name').text('Phase 2: Downloading Images (Slow)');
-                    $('#current-action').text('Downloading and processing hotel images...');
-                    $('#progress-bar').css('width', '55%').text('55%');
-                    $('#overall-percent').text('55%');
-                }
-                else if (message.includes('Phase 2 Progress:')) {
-                    var match = message.match(/(\d+)\/(\d+) hotels \((\d+)%\)/);
-                    if (match) {
-                        var processed = parseInt(match[1]);
-                        var total = parseInt(match[2]);
-                        var percent = parseInt(match[3]);
-
-                        $('#images-processed').text(processed);
-
-                        // Progress is 50-95% for Phase 2
-                        var overallPercent = 50 + (percent * 0.45);
-                        $('#progress-bar').css('width', overallPercent + '%').text(Math.round(overallPercent) + '%');
-                        $('#overall-percent').text(Math.round(overallPercent) + '%');
-                        $('#current-action').text('Downloading images for hotel ' + processed + ' of ' + total + '...');
-
-                        // Calculate time remaining for Phase 2
-                        if (importStartTime && processed > 0) {
-                            var elapsed = (Date.now() - importStartTime) / 1000;
-                            var rate = processed / elapsed;
-                            var remaining = total - processed;
-                            var eta = remaining / rate;
-                            var etaMins = Math.floor(eta / 60);
-                            var etaSecs = Math.floor(eta % 60);
-                            $('#time-remaining').text(etaMins > 0 ? etaMins + 'm ' + etaSecs + 's' : etaSecs + 's (images are slow)');
-                        }
-                    }
-                }
-                else if (message.includes('Images:') && message.includes('downloaded')) {
-                    var match = message.match(/(\d+) downloaded/);
-                    if (match) {
-                        var current = parseInt($('#images-processed').text()) || 0;
-                        $('#images-processed').text(current + parseInt(match[1]));
-                    }
-                }
-                else if (message.includes('PHASE 2 COMPLETE')) {
-                    $('#phase-icon').text('✅');
-                    $('#phase-name').text('Phase 2 Complete!');
-                    $('#current-action').text('All images downloaded and processed.');
-                    $('#progress-bar').css('width', '95%').text('95%');
-                    $('#overall-percent').text('95%');
-                }
+                // Phase 2 UI updates removed - no longer downloading images
                 else if (message.includes('Import completed:')) {
                     $('#phase-icon').text('🎉');
                     $('#phase-name').text('Import Complete!');
@@ -1298,7 +1416,7 @@ class Seminargo_Hotel_Importer {
                 totalHotels = 0;
 
                 // Reset UI
-                $('#import-progress').show();
+                $('#sync-progress-hero').show();
                 $('#phase-icon').text('📸');
                 $('#phase-name').text('Phase 2: Downloading Images (Debug Mode)');
                 $('#current-action').text('Starting Phase 2 directly (skipped Phase 1)...');
@@ -1384,8 +1502,11 @@ class Seminargo_Hotel_Importer {
                 lastProcessedCount = 0;
                 totalHotels = 0;
 
-                // Reset UI
-                $('#import-progress').show();
+                // Reset UI and show STOP/RESUME buttons
+                $('#sync-progress-hero').show();
+                $('#btn-fetch-now').hide();
+                $('#btn-stop-import').show();
+                $('#btn-resume-import').show();
                 $('#phase-icon').text('🚀');
                 $('#phase-name').text('Starting Batched Import...');
                 $('#current-action').text('Initializing background process...');
@@ -1457,7 +1578,9 @@ class Seminargo_Hotel_Importer {
                                 // Check if complete
                                 if (prog.status === 'complete') {
                                     clearInterval(progressInterval);
-                                    btn.prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>');
+                                    $('#btn-fetch-now').prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>').show();
+                                    $('#btn-stop-import').hide();
+                                    $('#btn-resume-import').hide();
 
                                     $('#phase-icon').text('🎉');
                                     $('#phase-name').text('Import Complete!');
@@ -1472,7 +1595,7 @@ class Seminargo_Hotel_Importer {
                                     $('#stat-errors').text(prog.errors);
 
                                     setTimeout(function() {
-                                        $('#import-progress').fadeOut(2000);
+                                        $('#sync-progress-hero').fadeOut(2000);
                                     }, 10000);
                                 }
                             }
@@ -1496,6 +1619,61 @@ class Seminargo_Hotel_Importer {
                         loadLogs();
                     });
                 }
+            });
+
+            $('#btn-stop-import').on('click', function() {
+                if (!confirm('⏹ Stop Import?\n\nThis will cancel the current import.\nProgress will be saved to history.\n\nContinue?')) {
+                    return;
+                }
+
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('⏹ <?php echo esc_js( __( 'Stopping...', 'seminargo' ) ); ?>');
+
+                $.post(ajaxurl, { action: 'seminargo_stop_import' }, function(response) {
+                    if (response.success) {
+                        // Stop polling
+                        if (window.progressPollingInterval) {
+                            clearInterval(window.progressPollingInterval);
+                        }
+
+                        // Hide progress UI
+                        $('#sync-progress-hero').fadeOut();
+                        $('#btn-fetch-now').prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>').show();
+                        $btn.hide();
+
+                        alert('✅ Import stopped successfully');
+                        loadLogs();
+                    } else {
+                        alert('❌ Error: ' + (response.data || 'Failed to stop import'));
+                        $btn.prop('disabled', false).text('⏹ <?php echo esc_js( __( 'STOP Import', 'seminargo' ) ); ?>');
+                    }
+                }).fail(function() {
+                    alert('❌ Server error occurred');
+                    $btn.prop('disabled', false).text('⏹ <?php echo esc_js( __( 'STOP Import', 'seminargo' ) ); ?>');
+                });
+            });
+
+            $('#btn-resume-import').on('click', function() {
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('▶ <?php echo esc_js( __( 'Resuming...', 'seminargo' ) ); ?>');
+
+                $.post(ajaxurl, { action: 'seminargo_resume_import' }, function(response) {
+                    $btn.prop('disabled', false).text('▶ <?php echo esc_js( __( 'RESUME / Continue', 'seminargo' ) ); ?>');
+
+                    if (response.success) {
+                        $('#current-action').text('✅ Resume triggered - processing should continue...');
+
+                        // Keep polling active
+                        if (!window.progressPollingInterval) {
+                            startProgressPolling();
+                        }
+                    } else {
+                        alert('❌ Error: ' + (response.data || 'Failed to resume import'));
+                    }
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('▶ <?php echo esc_js( __( 'RESUME / Continue', 'seminargo' ) ); ?>');
+                    alert('❌ Server error occurred');
+                });
             });
 
             $('#btn-delete-all-hotels').on('click', function() {
@@ -1528,8 +1706,274 @@ class Seminargo_Hotel_Importer {
                 });
             });
 
+            $('#btn-delete-hotel-images').on('click', function() {
+                if (!confirm('⚠️ Delete Hotel Images?\n\nThis will PERMANENTLY DELETE all hotel images from the media library.\n\nHotel posts will be KEPT (only images removed).\n\nImages will show via API URLs after deletion.\n\nContinue?')) {
+                    return;
+                }
+
+                var confirmText = prompt('Type "DELETE IMAGES" to confirm:');
+                if (confirmText !== 'DELETE IMAGES') {
+                    alert('❌ Cancelled. You did not type "DELETE IMAGES" correctly.');
+                    return;
+                }
+
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('🔥 <?php echo esc_js( __( 'Deleting images...', 'seminargo' ) ); ?>');
+
+                $.post(ajaxurl, { action: 'seminargo_delete_hotel_images' }, function(response) {
+                    $btn.prop('disabled', false).text('🗑️ <?php echo esc_js( __( 'Delete Hotel Images', 'seminargo' ) ); ?>');
+
+                    if (response.success) {
+                        var message = '✅ Successfully deleted ' + response.data.deleted_images + ' hotel images!\n\n';
+                        if (response.data.orphaned_found > 0) {
+                            message += '📦 Found & removed ' + response.data.orphaned_found + ' orphaned images\n';
+                        }
+                        message += '\nHotel posts were kept.\nPage will reload...';
+                        alert(message);
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + (response.data || 'Unknown error'));
+                    }
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('🗑️ <?php echo esc_js( __( 'Delete Hotel Images', 'seminargo' ) ); ?>');
+                    alert('❌ Server error occurred');
+                });
+            });
+
             $('#filter-errors, #filter-updates').on('change', function() {
                 loadLogs();
+            });
+
+            // Duplicate Cleanup
+            $('#btn-find-duplicates').on('click', function() {
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('🔍 Searching for duplicates...');
+
+                // Show searching message
+                var searchingHtml = '<div style="padding: 15px; background: #eff6ff; border-left: 3px solid #3b82f6; border-radius: 4px;">';
+                searchingHtml += '<strong style="color: #1e40af;">🔍 Searching for duplicates...</strong><br>';
+                searchingHtml += '<span style="color: #666; font-size: 12px;">Scanning database for matching hotel_id and ref_code values...</span>';
+                searchingHtml += '</div>';
+                $('#duplicate-summary').html(searchingHtml);
+                $('#duplicate-details').html('');
+                $('#duplicate-results').show();
+
+                $.post(ajaxurl, { action: 'seminargo_find_duplicates' }, function(response) {
+                    $btn.prop('disabled', false).text('🔍 <?php echo esc_js( __( 'Find Duplicates', 'seminargo' ) ); ?>');
+
+                    if (response.success) {
+                        var data = response.data;
+
+                        if (data.total_duplicates === 0) {
+                            // No duplicates found
+                            var html = '<div style="padding: 15px; background: #d1fae5; border-left: 3px solid #10b981; border-radius: 4px;">';
+                            html += '<strong style="color: #059669; font-size: 16px;">✅ No Duplicates Found!</strong><br>';
+                            html += '<span style="color: #666;">Your database is clean. All hotels are unique.</span>';
+                            html += '</div>';
+                            $('#duplicate-summary').html(html);
+                            $('#duplicate-details').html('');
+                        } else {
+                            // Duplicates found
+                            var html = '<div style="padding: 15px; background: #fef2f2; border-left: 3px solid #dc2626; border-radius: 4px; margin-bottom: 15px;">';
+                            html += '<strong style="color: #dc2626; font-size: 16px;">⚠️ Found ' + data.total_duplicates + ' Duplicate Groups</strong><br><br>';
+                            html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">';
+                            html += '<div style="background: white; padding: 10px; border-radius: 4px; text-align: center;">';
+                            html += '<div style="font-size: 20px; font-weight: bold; color: #dc2626;">' + data.total_to_remove + '</div>';
+                            html += '<div style="font-size: 12px; color: #666;">To Remove</div>';
+                            html += '</div>';
+                            html += '<div style="background: white; padding: 10px; border-radius: 4px; text-align: center;">';
+                            html += '<div style="font-size: 20px; font-weight: bold; color: #10b981;">' + data.total_duplicates + '</div>';
+                            html += '<div style="font-size: 12px; color: #666;">To Keep</div>';
+                            html += '</div>';
+                            html += '</div>';
+                            html += '</div>';
+
+                            $('#duplicate-summary').html(html);
+
+                            var details = '<div style="font-size: 11px; background: #f9fafb; padding: 10px; border-radius: 4px;">';
+                            details += '<strong style="margin-bottom: 10px; display: block;">Preview (showing first 20 groups):</strong>';
+                            data.duplicates.slice(0, 20).forEach(function(group, idx) {
+                                details += '<div style="padding: 10px; margin-bottom: 10px; background: white; border-radius: 4px; border-left: 3px solid #f59e0b;">';
+                                details += '<strong>Group ' + (idx + 1) + ':</strong> ' + group.type + ' = "' + group.value + '" (' + group.count + ' duplicates)<br>';
+                                details += '<span style="color: #10b981;">✓ Keep:</span> #' + group.keep.id + ' "' + group.keep.title + '" (most complete)<br>';
+                                group.remove.forEach(function(hotel) {
+                                    details += '<span style="color: #dc2626;">✗ Remove:</span> #' + hotel.id + ' "' + hotel.title + '"<br>';
+                                });
+                                details += '</div>';
+                            });
+                            if (data.total_duplicates > 20) {
+                                details += '<div style="padding: 10px; background: #fffbeb; border-radius: 4px; text-align: center; color: #92400e;">';
+                                details += '... and ' + (data.total_duplicates - 20) + ' more duplicate groups';
+                                details += '</div>';
+                            }
+                            details += '</div>';
+
+                            $('#duplicate-details').html(details);
+                        }
+
+                        $('#duplicate-results').show();
+                    } else {
+                        var errorHtml = '<div style="padding: 15px; background: #fef2f2; border-left: 3px solid #dc2626; border-radius: 4px;">';
+                        errorHtml += '<strong style="color: #dc2626;">❌ Error</strong><br>';
+                        errorHtml += '<span style="color: #666;">' + (response.data || 'Unknown error') + '</span>';
+                        errorHtml += '</div>';
+                        $('#duplicate-summary').html(errorHtml);
+                        $('#duplicate-details').html('');
+                        $('#duplicate-results').show();
+                    }
+                }).fail(function(xhr, status, error) {
+                    $btn.prop('disabled', false).text('🔍 <?php echo esc_js( __( 'Find Duplicates', 'seminargo' ) ); ?>');
+
+                    var errorHtml = '<div style="padding: 15px; background: #fef2f2; border-left: 3px solid #dc2626; border-radius: 4px;">';
+                    errorHtml += '<strong style="color: #dc2626;">❌ Server Error</strong><br>';
+                    errorHtml += '<span style="color: #666;">Status: ' + status + '<br>Error: ' + error + '</span>';
+                    errorHtml += '</div>';
+                    $('#duplicate-summary').html(errorHtml);
+                    $('#duplicate-details').html('');
+                    $('#duplicate-results').show();
+                });
+            });
+
+            $('#btn-cleanup-duplicates-dry').on('click', function() {
+                if (!confirm('Run a dry run to preview what would be removed? (No changes will be made)')) {
+                    return;
+                }
+
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('🧪 Running...');
+
+                $.post(ajaxurl, { 
+                    action: 'seminargo_cleanup_duplicates',
+                    dry_run: 'true'
+                }, function(response) {
+                    $btn.prop('disabled', false).text('🧪 <?php echo esc_js( __( 'Dry Run (Preview)', 'seminargo' ) ); ?>');
+                    
+                    if (response.success) {
+                        var data = response.data;
+                        var html = '<div style="padding: 15px; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px; margin-bottom: 15px;">';
+                        html += '<strong style="color: #92400e;">DRY RUN RESULTS (No changes made)</strong><br>';
+                        html += '<span style="color: #666;">Would remove: ' + data.removed + ' hotels</span><br>';
+                        html += '<span style="color: #666;">Would keep: ' + data.kept + ' hotels</span>';
+                        html += '</div>';
+                        
+                        var details = '<div style="font-size: 11px; max-height: 300px; overflow-y: auto;">';
+                        data.details.forEach(function(detail) {
+                            details += '<div style="padding: 5px; margin-bottom: 5px; background: #f9fafb; border-radius: 3px;">' + detail + '</div>';
+                        });
+                        details += '</div>';
+                        
+                        $('#duplicate-summary').html(html);
+                        $('#duplicate-details').html(details);
+                        $('#duplicate-results').show();
+                    } else {
+                        alert('❌ Error: ' + response.data);
+                    }
+                });
+            });
+
+            $('#btn-cleanup-duplicates').on('click', function() {
+                if (!confirm('⚠️ WARNING!\n\nThis will move duplicate hotels to TRASH.\n\nAre you sure you want to proceed?')) {
+                    return;
+                }
+
+                var confirmText = prompt('Type "REMOVE" in capital letters to confirm:');
+                if (confirmText !== 'REMOVE') {
+                    alert('❌ Cancelled. You did not type "REMOVE" correctly.');
+                    return;
+                }
+
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('🗑️ Removing duplicates...');
+
+                // Show processing message
+                var processingHtml = '<div style="padding: 15px; background: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 4px; margin-bottom: 15px;">';
+                processingHtml += '<strong style="color: #92400e;">⏳ Processing...</strong><br>';
+                processingHtml += '<span style="color: #666;">This may take 30-60 seconds for large datasets. Please wait...</span><br>';
+                processingHtml += '<div style="margin-top: 10px; background: #f3f4f6; height: 8px; border-radius: 4px; overflow: hidden;">';
+                processingHtml += '<div style="background: linear-gradient(90deg, #AC2A6E, #d64a94); height: 100%; width: 0%; animation: progress-pulse 2s ease-in-out infinite;" id="duplicate-progress-bar"></div>';
+                processingHtml += '</div>';
+                processingHtml += '</div>';
+
+                $('#duplicate-summary').html(processingHtml);
+                $('#duplicate-details').html('');
+                $('#duplicate-results').show();
+
+                // Animate progress bar
+                var progressWidth = 0;
+                var progressTimer = setInterval(function() {
+                    progressWidth += 5;
+                    if (progressWidth > 95) progressWidth = 95; // Cap at 95% until actually done
+                    $('#duplicate-progress-bar').css('width', progressWidth + '%');
+                }, 200); // Increase every 200ms
+
+                $.post(ajaxurl, {
+                    action: 'seminargo_cleanup_duplicates',
+                    dry_run: 'false'
+                }, function(response) {
+                    clearInterval(progressTimer);
+                    $('#duplicate-progress-bar').css('width', '100%');
+
+                    $btn.prop('disabled', false).text('🗑️ <?php echo esc_js( __( 'Remove Duplicates', 'seminargo' ) ); ?>');
+
+                    if (response.success) {
+                        var data = response.data;
+                        var html = '<div style="padding: 15px; background: #d1fae5; border-left: 3px solid #10b981; border-radius: 4px; margin-bottom: 15px;">';
+                        html += '<strong style="color: #059669; font-size: 16px;">✅ CLEANUP COMPLETE</strong><br><br>';
+                        html += '<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px;">';
+                        html += '<div style="background: #ecfdf5; padding: 10px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 24px; font-weight: bold; color: #10b981;">' + data.removed + '</div>';
+                        html += '<div style="font-size: 12px; color: #666;">Removed</div>';
+                        html += '</div>';
+                        html += '<div style="background: #f0fdf4; padding: 10px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 24px; font-weight: bold; color: #059669;">' + data.kept + '</div>';
+                        html += '<div style="font-size: 12px; color: #666;">Kept</div>';
+                        html += '</div>';
+                        if (data.errors > 0) {
+                            html += '<div style="background: #fef2f2; padding: 10px; border-radius: 4px; text-align: center;">';
+                            html += '<div style="font-size: 24px; font-weight: bold; color: #dc2626;">' + data.errors + '</div>';
+                            html += '<div style="font-size: 12px; color: #666;">Errors</div>';
+                            html += '</div>';
+                        }
+                        html += '</div>';
+                        html += '</div>';
+
+                        var details = '<div style="font-size: 11px; max-height: 300px; overflow-y: auto; background: #f9fafb; padding: 10px; border-radius: 4px;">';
+                        details += '<strong style="margin-bottom: 10px; display: block;">Detailed Log:</strong>';
+                        data.details.forEach(function(detail) {
+                            var color = detail.includes('ERROR') ? '#dc2626' : (detail.includes('Removed') ? '#10b981' : '#666');
+                            details += '<div style="padding: 5px; margin-bottom: 5px; color: ' + color + ';">' + detail + '</div>';
+                        });
+                        details += '</div>';
+
+                        $('#duplicate-summary').html(html);
+                        $('#duplicate-details').html(details);
+                        $('#duplicate-results').show();
+
+                        alert('✅ Duplicate Cleanup Complete!\n\n' +
+                              '✓ Removed: ' + data.removed + ' duplicate hotels\n' +
+                              '✓ Kept: ' + data.kept + ' unique hotels\n' +
+                              (data.errors > 0 ? '⚠ Errors: ' + data.errors + '\n\n' : '\n') +
+                              'Page will reload in 3 seconds to refresh counts...');
+
+                        setTimeout(function() {
+                            location.reload();
+                        }, 3000);
+                    } else {
+                        alert('❌ Error during cleanup: ' + (response.data || 'Unknown error'));
+                    }
+                }).fail(function(xhr, status, error) {
+                    clearInterval(progressTimer);
+                    $btn.prop('disabled', false).text('🗑️ <?php echo esc_js( __( 'Remove Duplicates', 'seminargo' ) ); ?>');
+
+                    var errorHtml = '<div style="padding: 15px; background: #fef2f2; border-left: 3px solid #dc2626; border-radius: 4px;">';
+                    errorHtml += '<strong style="color: #dc2626;">❌ SERVER ERROR</strong><br>';
+                    errorHtml += '<span style="color: #666;">Status: ' + status + '</span><br>';
+                    errorHtml += '<span style="color: #666;">Error: ' + error + '</span>';
+                    errorHtml += '</div>';
+
+                    $('#duplicate-summary').html(errorHtml);
+                    alert('❌ Server error occurred during cleanup: ' + error);
+                });
             });
 
             // Auto-Import Controls
@@ -1601,9 +2045,212 @@ class Seminargo_Hotel_Importer {
                 }
             });
 
+            $('#btn-fix-schedule').on('click', function() {
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('🔧 <?php echo esc_js( __( 'Fixing...', 'seminargo' ) ); ?>');
+
+                $.post(ajaxurl, { action: 'seminargo_force_reschedule_cron' }, function(response) {
+                    $btn.prop('disabled', false).text('🔧 <?php echo esc_js( __( 'Fix Schedule (12h)', 'seminargo' ) ); ?>');
+
+                    if (response.success) {
+                        console.log('[FIX SCHEDULE] Debug:', response.data);
+                        alert('✅ Schedule fixed!\n\n' +
+                              'Old Next Run: ' + response.data.old_next_run + '\n' +
+                              'New Next Run: ' + response.data.next_run_formatted + '\n' +
+                              'Cleared: ' + response.data.cleared + ' events\n\n' +
+                              'Page will reload...');
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + (response.data || 'Failed to reschedule'));
+                    }
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('🔧 <?php echo esc_js( __( 'Fix Schedule (12h)', 'seminargo' ) ); ?>');
+                    alert('❌ Server error occurred');
+                });
+            });
+
+            /**
+             * Check if an import is already running and resume progress UI
+             * CRITICAL FIX: Restores progress display after page refresh
+             */
+            function checkAndResumeRunningImport() {
+                $.post(ajaxurl, { action: 'seminargo_get_import_progress' }, function(resp) {
+                    if (!resp.success || !resp.data.progress) return;
+
+                    var prog = resp.data.progress;
+
+                    // Only resume if status is 'running'
+                    if (prog.status !== 'running') return;
+
+                    console.log('🔄 Resuming running import...', prog);
+
+                    // Show progress UI and STOP/RESUME buttons
+                    $('#sync-progress-hero').show();
+                    $('#btn-fetch-now').prop('disabled', true).text('⏳ <?php echo esc_js( __( 'Import Running...', 'seminargo' ) ); ?>').hide();
+                    $('#btn-stop-import').show();
+                    $('#btn-resume-import').show();
+
+                    // Restore progress values
+                    $('#hotels-total').text(prog.total_hotels || 0);
+                    $('#hotels-processed').text(prog.hotels_processed || 0);
+                    $('#live-created').text(prog.created || 0);
+                    $('#live-updated').text(prog.updated || 0);
+                    $('#images-processed').text(prog.images_processed || 0);
+
+                    // Set phase display
+                    if (prog.phase === 'phase1') {
+                        $('#phase-icon').text('🏨');
+                        $('#phase-name').text('<?php echo esc_js( __( 'Phase 1: Creating Hotels', 'seminargo' ) ); ?>');
+                        $('#current-action').text('<?php echo esc_js( __( 'Processing hotel data...', 'seminargo' ) ); ?>');
+                    } else if (prog.phase === 'finalize') {
+                        $('#phase-icon').text('✨');
+                        $('#phase-name').text('<?php echo esc_js( __( 'Finalizing Import...', 'seminargo' ) ); ?>');
+                        $('#current-action').text('<?php echo esc_js( __( 'Cleaning up and finalizing...', 'seminargo' ) ); ?>');
+                    }
+
+                    // Calculate and display progress percentage
+                    if (prog.total_hotels > 0) {
+                        var percent = 0;
+                        if (prog.phase === 'phase1') {
+                            // Phase 1: 10-90%
+                            percent = 10 + ((prog.hotels_processed / prog.total_hotels) * 80);
+                        } else if (prog.phase === 'finalize') {
+                            // Finalize: 90-100%
+                            percent = 90 + ((prog.hotels_processed / prog.total_hotels) * 10);
+                        }
+                        $('#progress-bar').css('width', Math.round(percent) + '%').text(Math.round(percent) + '%');
+                        $('#overall-percent').text(Math.round(percent) + '%');
+                    }
+
+                    // Calculate elapsed time
+                    if (prog.start_time) {
+                        var elapsed = Math.floor(Date.now() / 1000 - prog.start_time);
+                        var mins = Math.floor(elapsed / 60);
+                        var secs = elapsed % 60;
+                        $('#time-elapsed').text(mins > 0 ? mins + 'm ' + secs + 's' : secs + 's');
+
+                        // Set importStartTime for ongoing calculations
+                        importStartTime = Date.now() - (elapsed * 1000);
+                    }
+
+                    // Start polling for updates
+                    startProgressPolling();
+
+                    console.log('✅ Progress UI resumed successfully');
+                });
+            }
+
+            /**
+             * Start polling for progress updates with AUTO-RESUME
+             * Extracted as reusable function
+             */
+            function startProgressPolling() {
+                // Clear any existing interval
+                if (window.progressPollingInterval) {
+                    clearInterval(window.progressPollingInterval);
+                }
+
+                // Track last progress change for auto-resume detection
+                var lastProgressSnapshot = null;
+                var lastProgressChangeTime = Date.now();
+                var stallDetectionSeconds = 15; // Auto-resume if no change for 15 seconds
+                var autoResumeAttempts = 0;
+                var maxAutoResumeAttempts = 50; // Max auto-resumes (enough for full sync)
+
+                window.progressPollingInterval = setInterval(function() {
+                    $.post(ajaxurl, { action: 'seminargo_get_import_progress' }, function(resp) {
+                        if (!resp.success) return;
+
+                        var prog = resp.data.progress;
+                        var logs = resp.data.logs;
+
+                        // Update logs
+                        if (logs) {
+                            renderLogs(logs);
+                            updateProgressUI(logs);
+                        }
+
+                        // Update progress display
+                        if (prog) {
+                            var currentSnapshot = JSON.stringify({
+                                offset: prog.offset,
+                                hotels_processed: prog.hotels_processed,
+                                images_processed: prog.images_processed
+                            });
+
+                            // AUTO-RESUME: Detect if progress has stalled
+                            if (currentSnapshot !== lastProgressSnapshot) {
+                                // Progress changed - update timestamp
+                                lastProgressChangeTime = Date.now();
+                                lastProgressSnapshot = currentSnapshot;
+                                autoResumeAttempts = 0; // Reset counter on progress
+                            } else {
+                                // No change detected
+                                var stallTime = Math.floor((Date.now() - lastProgressChangeTime) / 1000);
+
+                                if (stallTime > stallDetectionSeconds && prog.status === 'running') {
+                                    // Import is stalled - auto-resume!
+                                    if (autoResumeAttempts < maxAutoResumeAttempts) {
+                                        autoResumeAttempts++;
+                                        console.log('[AUTO-RESUME] Stalled for ' + stallTime + 's - triggering resume (attempt ' + autoResumeAttempts + ')');
+
+                                        $('#current-action').html('⚠️ <strong>Stalled detected - Auto-resuming...</strong> (attempt ' + autoResumeAttempts + ')');
+
+                                        // Trigger resume
+                                        $.post(ajaxurl, { action: 'seminargo_resume_import' }, function(resumeResp) {
+                                            if (resumeResp.success) {
+                                                console.log('[AUTO-RESUME] ✅ Resume triggered');
+                                                lastProgressChangeTime = Date.now(); // Reset stall timer
+                                            }
+                                        });
+                                    } else {
+                                        // Too many auto-resume attempts - show warning
+                                        $('#current-action').html('⛔ <strong>Import appears stuck</strong> - Click STOP and try again');
+                                        console.warn('[AUTO-RESUME] Max attempts reached (' + maxAutoResumeAttempts + ') - giving up');
+                                    }
+                                }
+                            }
+
+                            $('#hotels-total').text(prog.total_hotels || 0);
+                            $('#hotels-processed').text(prog.hotels_processed || 0);
+                            $('#live-created').text(prog.created || 0);
+                            $('#live-updated').text(prog.updated || 0);
+                            $('#images-processed').text(prog.images_processed || 0);
+
+                            // Update progress bar
+                            if (prog.total_hotels > 0) {
+                                var percent = 0;
+                                if (prog.phase === 'phase1') {
+                                    percent = 10 + ((prog.hotels_processed / prog.total_hotels) * 80);
+                                } else if (prog.phase === 'finalize') {
+                                    percent = 90 + ((prog.hotels_processed / prog.total_hotels) * 10);
+                                }
+                                $('#progress-bar').css('width', Math.round(percent) + '%').text(Math.round(percent) + '%');
+                                $('#overall-percent').text(Math.round(percent) + '%');
+                            }
+
+                            // Check if complete
+                            if (prog.status === 'complete' || prog.phase === 'done') {
+                                clearInterval(window.progressPollingInterval);
+                                $('#phase-icon').text('✅');
+                                $('#phase-name').text('<?php echo esc_js( __( 'Import Complete!', 'seminargo' ) ); ?>');
+                                $('#current-action').text('<?php echo esc_js( __( 'All done!', 'seminargo' ) ); ?>');
+                                $('#progress-bar').css('width', '100%').text('100%');
+                                $('#overall-percent').text('100%');
+                                $('#time-remaining').text('<?php echo esc_js( __( 'Complete!', 'seminargo' ) ); ?>');
+                                $('#btn-fetch-now').prop('disabled', false).text('🔄 <?php echo esc_js( __( 'Fetch Now', 'seminargo' ) ); ?>').show();
+                                $('#btn-stop-import').hide();
+                                $('#btn-resume-import').hide();
+                            }
+                        }
+                    });
+                }, 2000); // Poll every 2 seconds
+            }
+
             // Initial loads
             loadLogs();
             loadAutoImportStatus();
+            checkAndResumeRunningImport(); // NEW: Check for running import on page load
 
             // Refresh auto-import status every 30 seconds
             setInterval(loadAutoImportStatus, 30000);
@@ -1675,6 +2322,163 @@ class Seminargo_Hotel_Importer {
                         alert('<?php echo esc_js( __( 'Error saving environment. Please try again.', 'seminargo' ) ); ?>');
                         submitBtn.prop('disabled', false).text(originalText);
                     }
+                });
+            });
+
+            /**
+             * Load and display sync history
+             */
+            function loadSyncHistory() {
+                var $container = $('#sync-history-container');
+                var $loadBtn = $('#btn-load-history');
+                var $refreshBtn = $('#btn-refresh-history');
+
+                $loadBtn.prop('disabled', true).text('<?php echo esc_js( __( 'Loading...', 'seminargo' ) ); ?>');
+                $container.html('<p style="color: #868e96; text-align: center; padding: 20px;"><?php echo esc_js( __( 'Loading history...', 'seminargo' ) ); ?></p>').show();
+
+                $.post(ajaxurl, { action: 'seminargo_get_sync_history' }, function(response) {
+                    $loadBtn.prop('disabled', false).text('📜 <?php echo esc_js( __( 'Load Sync History', 'seminargo' ) ); ?>').hide();
+                    $refreshBtn.show();
+
+                    if (!response.success) {
+                        $container.html('<p style="color: #ef4444;"><?php echo esc_js( __( 'Error loading history', 'seminargo' ) ); ?></p>');
+                        return;
+                    }
+
+                    var history = response.data.history || [];
+
+                    if (history.length === 0) {
+                        $container.html('<p style="color: #868e96; text-align: center; padding: 20px;"><?php echo esc_js( __( 'No sync history yet. Run your first import to see history here.', 'seminargo' ) ); ?></p>');
+                        return;
+                    }
+
+                    // Render history entries
+                    var html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+
+                    history.forEach(function(entry, index) {
+                        var statusColor = '#868e96';
+                        var statusIcon = '⏹';
+                        var statusText = entry.status;
+
+                        if (entry.status === 'complete') {
+                            statusColor = '#10b981';
+                            statusIcon = '✅';
+                            statusText = 'Completed';
+                        } else if (entry.status === 'failed') {
+                            statusColor = '#ef4444';
+                            statusIcon = '❌';
+                            statusText = 'Failed';
+                        } else if (entry.status === 'running') {
+                            statusColor = '#3b82f6';
+                            statusIcon = '⏳';
+                            statusText = 'Running';
+                        }
+
+                        var syncTypeIcon = entry.is_full_sync ? '🌐' : '⚡';
+                        var syncTypeText = entry.is_full_sync ? 'Full Sync' : 'Incremental';
+                        var duration = entry.duration || 0;
+                        var durationText = duration > 3600 ? (duration / 3600).toFixed(1) + 'h' : (duration / 60).toFixed(0) + 'm';
+
+                        html += '<div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px;">';
+
+                        // Header
+                        html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">';
+                        html += '<div>';
+                        html += '<span style="font-weight: 600; color: ' + statusColor + ';">' + statusIcon + ' ' + statusText + '</span>';
+                        html += '<span style="margin-left: 15px; color: #6b7280;">' + syncTypeIcon + ' ' + syncTypeText + '</span>';
+                        html += '</div>';
+                        html += '<div style="font-size: 12px; color: #9ca3af;">' + entry.date + ' (' + durationText + ')</div>';
+                        html += '</div>';
+
+                        // Stats
+                        html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 10px;">';
+                        html += '<div style="background: #f0fdf4; padding: 8px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 11px; color: #666; text-transform: uppercase;">Processed</div>';
+                        html += '<div style="font-size: 16px; font-weight: bold; color: #2271b1;">' + (entry.stats.hotels_processed || 0) + '</div>';
+                        html += '</div>';
+                        html += '<div style="background: #f0fdf4; padding: 8px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 11px; color: #666; text-transform: uppercase;">Created</div>';
+                        html += '<div style="font-size: 16px; font-weight: bold; color: #10b981;">' + (entry.stats.created || 0) + '</div>';
+                        html += '</div>';
+                        html += '<div style="background: #fffbeb; padding: 8px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 11px; color: #666; text-transform: uppercase;">Updated</div>';
+                        html += '<div style="font-size: 16px; font-weight: bold; color: #f59e0b;">' + (entry.stats.updated || 0) + '</div>';
+                        html += '</div>';
+                        html += '<div style="background: #fef2f2; padding: 8px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 11px; color: #666; text-transform: uppercase;">Errors</div>';
+                        html += '<div style="font-size: 16px; font-weight: bold; color: #ef4444;">' + (entry.stats.errors || 0) + '</div>';
+                        html += '</div>';
+                        html += '<div style="background: #eff6ff; padding: 8px; border-radius: 4px; text-align: center;">';
+                        html += '<div style="font-size: 11px; color: #666; text-transform: uppercase;">Images</div>';
+                        html += '<div style="font-size: 16px; font-weight: bold; color: #3b82f6;">' + (entry.stats.images_processed || 0) + '</div>';
+                        html += '</div>';
+                        html += '</div>';
+
+                        // Expandable logs
+                        if (entry.logs && entry.logs.length > 0) {
+                            html += '<details style="margin-top: 10px;">';
+                            html += '<summary style="cursor: pointer; color: #6b7280; font-size: 13px;">📋 View Logs (' + entry.logs.length + ' entries)</summary>';
+                            html += '<div style="max-height: 300px; overflow-y: auto; background: #1d2327; color: #fff; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; margin-top: 10px;">';
+
+                            entry.logs.slice().reverse().forEach(function(log) {
+                                var logColor = '#72aee6';
+                                if (log.type === 'error') logColor = '#ff6b6b';
+                                else if (log.type === 'success') logColor = '#51cf66';
+                                else if (log.type === 'update') logColor = '#ffd43b';
+
+                                html += '<div style="padding: 3px 0; border-bottom: 1px solid #333; color: ' + logColor + ';">';
+                                html += '<span style="color: #868e96;">[' + log.time + ']</span> ';
+                                html += log.message;
+                                html += '</div>';
+                            });
+
+                            html += '</div>';
+                            html += '</details>';
+                        }
+
+                        html += '</div>';
+                    });
+
+                    html += '</div>';
+                    $container.html(html);
+                }).fail(function() {
+                    $loadBtn.prop('disabled', false).text('📜 <?php echo esc_js( __( 'Load Sync History', 'seminargo' ) ); ?>');
+                    $container.html('<p style="color: #ef4444;"><?php echo esc_js( __( 'Failed to load history', 'seminargo' ) ); ?></p>');
+                });
+            }
+
+            // Sync History button handlers
+            $('#btn-load-history, #btn-refresh-history').on('click', function() {
+                loadSyncHistory();
+            });
+
+            // Save Brevo API Key
+            $('#save-brevo-api-key').on('click', function() {
+                var $btn = $(this);
+                var apiKey = $('#brevo-api-key').val().trim();
+
+                if (!apiKey) {
+                    alert('<?php echo esc_js( __( 'Bitte geben Sie einen API Key ein.', 'seminargo' ) ); ?>');
+                    return;
+                }
+
+                $btn.prop('disabled', true).text('💾 <?php echo esc_js( __( 'Saving...', 'seminargo' ) ); ?>');
+
+                $.post(ajaxurl, {
+                    action: 'seminargo_save_brevo_api_key',
+                    api_key: apiKey
+                }, function(response) {
+                    $btn.prop('disabled', false).text('💾 <?php echo esc_js( __( 'Save API Key', 'seminargo' ) ); ?>');
+
+                    if (response.success) {
+                        alert('✅ <?php echo esc_js( __( 'API Key saved successfully!', 'seminargo' ) ); ?>');
+                        location.reload();
+                    } else {
+                        alert('❌ ' + (response.data || '<?php echo esc_js( __( 'Error saving API key', 'seminargo' ) ); ?>'));
+                    }
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('💾 <?php echo esc_js( __( 'Save API Key', 'seminargo' ) ); ?>');
+                    alert('❌ <?php echo esc_js( __( 'Server error occurred', 'seminargo' ) ); ?>');
                 });
             });
         });
@@ -1777,6 +2581,75 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
+     * AJAX handler to delete ONLY hotel images (keep hotel posts)
+     * Detects hotel images by:
+     * 1. post_parent = hotel post ID (attached images)
+     * 2. _seminargo_source_url meta key (orphaned hotel images)
+     */
+    public function ajax_delete_hotel_images() {
+        // Security check
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        global $wpdb;
+        $deleted_images = 0;
+        $image_ids_to_delete = [];
+
+        // METHOD 1: Get images attached to hotel posts (via post_parent)
+        $hotels = get_posts([
+            'post_type'      => 'hotel',
+            'posts_per_page' => -1,
+            'post_status'    => 'any',
+            'fields'         => 'ids',
+        ]);
+
+        foreach ( $hotels as $hotel_id ) {
+            $attachments = get_posts([
+                'post_type'      => 'attachment',
+                'posts_per_page' => -1,
+                'post_parent'    => $hotel_id,
+                'fields'         => 'ids',
+            ]);
+
+            foreach ( $attachments as $attachment_id ) {
+                $image_ids_to_delete[ $attachment_id ] = true;
+            }
+        }
+
+        // METHOD 2: Get orphaned hotel images (have _seminargo_source_url meta but no valid post_parent)
+        // These are images that were attached to deleted hotels
+        $orphaned_images = $wpdb->get_col( "
+            SELECT DISTINCT pm.post_id
+            FROM {$wpdb->postmeta} pm
+            INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+            WHERE pm.meta_key = '_seminargo_source_url'
+            AND p.post_type = 'attachment'
+        " );
+
+        foreach ( $orphaned_images as $attachment_id ) {
+            $image_ids_to_delete[ $attachment_id ] = true;
+        }
+
+        // Delete all identified hotel images
+        foreach ( array_keys( $image_ids_to_delete ) as $attachment_id ) {
+            if ( wp_delete_attachment( $attachment_id, true ) ) {
+                $deleted_images++;
+            }
+        }
+
+        wp_send_json_success([
+            'message' => sprintf(
+                __( 'Successfully deleted %d hotel images (including %d orphaned). Hotel posts were kept.', 'seminargo' ),
+                $deleted_images,
+                count( $orphaned_images )
+            ),
+            'deleted_images' => $deleted_images,
+            'orphaned_found' => count( $orphaned_images ),
+        ]);
+    }
+
+    /**
      * AJAX handler to start batched import (WP Engine compatible)
      * Returns immediately and processes in background
      */
@@ -1784,6 +2657,9 @@ class Seminargo_Hotel_Importer {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_send_json_error( 'Permission denied' );
         }
+
+        // NOTE: Do NOT archive logs here - archive only when sync completes
+        // Archiving here clears logs immediately, making UI show "No logs yet"
 
         // Initialize progress tracking - DON'T store hotel data, just progress numbers
         $progress = [
@@ -1801,9 +2677,6 @@ class Seminargo_Hotel_Importer {
         ];
 
         update_option( 'seminargo_batched_import_progress', $progress, false );
-
-        // Clear old logs
-        delete_option( $this->log_option );
 
         $this->log( 'info', '🚀 Starting batched import (WP Engine compatible)...' );
         $this->flush_logs();
@@ -1871,6 +2744,8 @@ class Seminargo_Hotel_Importer {
             wp_send_json_error( 'Permission denied' );
         }
 
+        // NOTE: Do NOT archive logs here - archive only when sync completes
+
         // Get total hotel count for progress tracking
         $total_hotels = wp_count_posts( 'hotel' )->publish + wp_count_posts( 'hotel' )->draft;
 
@@ -1892,9 +2767,6 @@ class Seminargo_Hotel_Importer {
         ];
 
         update_option( 'seminargo_batched_import_progress', $progress, false );
-
-        // Clear old logs
-        delete_option( $this->log_option );
 
         $this->log( 'info', '🔧 DEBUG MODE: Skipping Phase 1, starting directly with Phase 2 (image downloads)' );
         $this->log( 'success', '📸 PHASE 2: Downloading images...' );
@@ -2119,22 +2991,17 @@ class Seminargo_Hotel_Importer {
                 $batch_count = count( $batch_hotels );
 
                 if ( $batch_count === 0 ) {
-                    // No more hotels - move to Phase 2
-                    $progress['phase'] = 'phase2';
+                    // No more hotels - Phase 1 complete, skip to finalize
+                    // PHASE 2 REMOVED: Images are now displayed via API URLs, not downloaded
+                    $progress['phase'] = 'finalize';
                     $progress['offset'] = 0;
                     $this->log( 'success', "✅ PHASE 1 COMPLETE! All hotels created/updated (total: {$progress['hotels_processed']})" );
-                    $this->log( 'success', '📸 PHASE 2: Downloading images...' );
+                    $this->log( 'info', '⏭️ Skipping Phase 2 (images displayed via API URLs)' );
                     $this->flush_logs();
 
                     update_option( 'seminargo_batched_import_progress', $progress, false );
-                    
-                    // CRITICAL: Directly execute Phase 2 immediately to avoid WP Cron delays on production
-                    // This ensures Phase 2 starts immediately rather than waiting for cron
-                    $this->log( 'info', '🔄 Starting Phase 2 immediately...' );
-                    $this->flush_logs();
-                    
-                    // Recursively call ourselves to process Phase 2 immediately
-                    // This bypasses WP Cron which may not fire reliably on production
+
+                    // Move directly to finalize
                     $this->process_single_batch();
                     return;
                 }
@@ -2197,8 +3064,18 @@ class Seminargo_Hotel_Importer {
             ] ) . "\n", FILE_APPEND | LOCK_EX );
             // #endregion
 
-            // PHASE 2: DOWNLOAD IMAGES - Batched
+            // PHASE 2: REMOVED - Images now displayed via API URLs
+            // Skip directly to finalize if somehow phase2 is set
             if ( $progress['phase'] === 'phase2' ) {
+                // Redirect to finalize
+                $progress['phase'] = 'finalize';
+                $this->log( 'info', '⏭️ Phase 2 skipped (images displayed via API URLs)' );
+                update_option( 'seminargo_batched_import_progress', $progress, false );
+                // Fall through to finalize below
+            }
+
+            // OLD Phase 2 code commented out - keeping for reference but not executing
+            if ( false && $progress['phase'] === 'phase2_disabled' ) {
                 // #region agent log
                 $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
                 @file_put_contents( $log_path, json_encode( [
@@ -2225,16 +3102,16 @@ class Seminargo_Hotel_Importer {
                 // #endregion
                 
                 // WP Engine enforces 60-second execution limit
-                // OPTIMIZED: Process MULTIPLE images per request (3 images) to speed up import
-                // Each image takes ~5-12 seconds (download + processing), so we can safely process 3 per request
-                // With 50s threshold and 3 images, we have ~16s per image budget, but use 12s max to account for overhead
+                // OPTIMIZED: Process MULTIPLE images per request (10 images) to speed up import
+                // With system cron (not pseudo-cron), we have more reliable execution
+                // Increased from 3 to 10 to reduce total executions by 70% (40k images = 4k executions vs 13k)
                 $timeout_threshold = 50; // Exit at 50 seconds to leave 10s buffer
-                $images_per_request = 3; // Process 3 images per request (can be increased if stable)
+                $images_per_request = 10; // Process 10 images per request (optimized for speed)
                 
                 // CRITICAL: Calculate max time per image to prevent timeout
-                // With 50s threshold and 3 images, we have ~16s per image (with buffer)
-                // But account for overhead (DB queries, file operations, etc.) - use 12s per image max
-                $max_time_per_image = 12; // Maximum seconds allowed per image download/processing
+                // With 50s threshold and 10 images, we have ~5s per image budget
+                // Account for overhead (DB queries, file operations, etc.) - use 4s per image max
+                $max_time_per_image = 4; // Maximum seconds allowed per image download/processing
                 
                 // Check if we're resuming a partially processed hotel
                 $current_hotel_id = $progress['current_hotel_id'] ?? null;
@@ -2490,10 +3367,33 @@ class Seminargo_Hotel_Importer {
                 $save_result = update_option( 'seminargo_batched_import_progress', $progress, false );
                 $save_time = ( microtime( true ) - $save_start ) * 1000;
                 $elapsed_before_save = time() - $request_start_time;
-                
-                // Verify progress was saved
+
+                // CRITICAL: Verify progress was saved before continuing
                 $verify_progress = get_option( 'seminargo_batched_import_progress', null );
                 $save_verified = ( $verify_progress && isset( $verify_progress['offset'] ) && $verify_progress['offset'] === $progress['offset'] );
+
+                // If save failed, retry once with cache bypass
+                if ( ! $save_result || ! $save_verified ) {
+                    $this->log( 'warning', '⚠️ Progress save failed or verification failed. Retrying with cache bypass...' );
+
+                    // Force cache clear and retry
+                    wp_cache_delete( 'seminargo_batched_import_progress', 'options' );
+                    $retry_save = update_option( 'seminargo_batched_import_progress', $progress, false );
+
+                    // Verify retry
+                    $verify_retry = get_option( 'seminargo_batched_import_progress', null );
+                    $retry_verified = ( $verify_retry && isset( $verify_retry['offset'] ) && $verify_retry['offset'] === $progress['offset'] );
+
+                    if ( ! $retry_save || ! $retry_verified ) {
+                        // CRITICAL FAILURE - cannot continue without progress persistence
+                        $this->log( 'error', '❌ CRITICAL: Failed to save progress after retry! Aborting batch to prevent data loss.' );
+                        $this->flush_logs();
+                        return; // Do NOT schedule next batch
+                    }
+
+                    $this->log( 'success', '✅ Progress save retry succeeded.' );
+                    $save_verified = true;
+                }
 
                 // #region agent log
                 $log_path = dirname( __FILE__ ) . '/../.cursor/debug.log';
@@ -2693,11 +3593,22 @@ class Seminargo_Hotel_Importer {
                 $this->log( 'success', '✅ Import completed: ' . $progress['created'] . ' created, ' . $progress['updated'] . ' updated, ' . $progress['drafted'] . ' drafted, ' . $progress['errors'] . ' errors' );
                 $this->flush_logs();
 
+                // Update last full sync timestamp if this was a full sync
+                if ( isset( $progress['is_full_sync'] ) && $progress['is_full_sync'] ) {
+                    update_option( $this->last_full_sync_option, time(), false );
+                    $this->log( 'success', '📅 Full sync completed. Next full sync in 7 days.' );
+                    $this->flush_logs();
+                }
+
                 // Mark as complete
                 $progress['status'] = 'complete';
                 $progress['phase'] = 'done';
                 $progress['total_hotels'] = $progress['hotels_processed']; // Final count
                 update_option( 'seminargo_batched_import_progress', $progress, false );
+
+                // IMPORTANT: Archive logs to history before next sync
+                $this->archive_current_logs_to_history( $progress );
+
                 return;
             }
 
@@ -2842,6 +3753,71 @@ class Seminargo_Hotel_Importer {
     }
 
     /**
+     * Archive current logs to sync history
+     * Saves logs with metadata before clearing for next sync
+     */
+    private function archive_current_logs_to_history( $progress = [] ) {
+        // Flush any remaining logs first
+        $this->flush_logs();
+
+        // Get current logs
+        $current_logs = get_option( $this->log_option, [] );
+
+        // If no logs, nothing to archive
+        if ( empty( $current_logs ) ) {
+            return;
+        }
+
+        // Get existing history
+        $history = get_option( $this->sync_history_option, [] );
+
+        // Create history entry
+        $history_entry = [
+            'id' => time() . '_' . wp_generate_password( 6, false ), // Unique ID
+            'timestamp' => time(),
+            'date' => current_time( 'Y-m-d H:i:s' ),
+            'status' => $progress['status'] ?? 'unknown',
+            'phase' => $progress['phase'] ?? 'unknown',
+            'sync_type' => $progress['sync_type'] ?? 'manual',
+            'is_full_sync' => $progress['is_full_sync'] ?? false,
+            'stats' => [
+                'hotels_processed' => $progress['hotels_processed'] ?? 0,
+                'images_processed' => $progress['images_processed'] ?? 0,
+                'created' => $progress['created'] ?? 0,
+                'updated' => $progress['updated'] ?? 0,
+                'drafted' => $progress['drafted'] ?? 0,
+                'errors' => $progress['errors'] ?? 0,
+                'total_hotels' => $progress['total_hotels'] ?? 0,
+            ],
+            'duration' => isset( $progress['start_time'] ) ? ( time() - $progress['start_time'] ) : 0,
+            'logs' => array_slice( $current_logs, -100 ), // Keep last 100 log entries for this sync
+        ];
+
+        // Add to history array
+        array_unshift( $history, $history_entry ); // Add to beginning
+
+        // Keep only last 20 syncs
+        if ( count( $history ) > 20 ) {
+            $history = array_slice( $history, 0, 20 );
+        }
+
+        // Save history
+        update_option( $this->sync_history_option, $history, false );
+
+        // Now clear current logs for next sync
+        delete_option( $this->log_option );
+    }
+
+    /**
+     * Get sync history
+     * Returns array of past syncs with logs
+     */
+    public function get_sync_history( $limit = 20 ) {
+        $history = get_option( $this->sync_history_option, [] );
+        return array_slice( $history, 0, $limit );
+    }
+
+    /**
      * Fetch hotels from API with pagination
      */
     private function fetch_hotels_from_api() {
@@ -2860,6 +3836,7 @@ class Seminargo_Hotel_Importer {
                 hotelList(skip: ' . $skip . ', limit: ' . $batch_size . ') {
                     id
                     slug
+                    migSlug
                     refCode
                     name
                     businessName
@@ -3200,22 +4177,48 @@ class Seminargo_Hotel_Importer {
      * Process a single hotel
      */
     private function process_hotel( $hotel, $process_images = true ) {
-        // Check if hotel exists
+        // Convert hotel ID to string for consistent comparison (prevent type mismatch duplicates)
+        $hotel_id_str = strval( $hotel->id );
+        $ref_code = $hotel->refCode ?? '';
+        
+        // Check if hotel exists - check BOTH hotel_id AND ref_code as backup
+        // This prevents duplicates even if hotel_id type mismatch occurred
         $args = [
             'post_type'      => 'hotel',
             'post_status'    => [ 'publish', 'draft' ],
             'meta_query'     => [
+                'relation' => 'OR',
                 [
                     'key'   => 'hotel_id',
-                    'value' => $hotel->id,
+                    'value' => $hotel_id_str,
                 ],
             ],
             'posts_per_page' => 1,
         ];
+        
+        // Add ref_code check if available (as backup duplicate detection)
+        if ( ! empty( $ref_code ) ) {
+            $args['meta_query'][] = [
+                'key'   => 'ref_code',
+                'value' => $ref_code,
+            ];
+        }
 
         $query = new WP_Query( $args );
         $is_new = ! $query->have_posts();
         $post_id = null;
+        
+        // If found by ref_code but hotel_id doesn't match, update the hotel_id to fix data inconsistency
+        if ( ! $is_new && ! empty( $ref_code ) ) {
+            $found_post_id = $query->posts[0]->ID;
+            $existing_hotel_id = get_post_meta( $found_post_id, 'hotel_id', true );
+            
+            // If hotel_id doesn't match, update it (fixes type mismatch issues)
+            if ( strval( $existing_hotel_id ) !== $hotel_id_str ) {
+                update_post_meta( $found_post_id, 'hotel_id', $hotel_id_str );
+                $this->log( 'info', '🔧 Fixed hotel_id type mismatch for: ' . ( $hotel->businessName ?? $hotel->name ?? 'Unknown' ) );
+            }
+        }
 
         // Prepare content
         $content = '';
@@ -3341,8 +4344,9 @@ class Seminargo_Hotel_Importer {
 
         $meta_fields = [
             // Basic info
-            'hotel_id'      => $hotel->id,
+            'hotel_id'      => strval( $hotel->id ), // Store as string for consistency
             'api_slug'      => $hotel->slug ?? '',
+            'mig_slug'      => $hotel->migSlug ?? '', // Store as-is from API (e.g., Jugendgästehaus_Bad_Ischl with actual ä)
             'finder_url_slug'     => $this->finder_base_url . '?showHotelBySlug=' . ( $hotel->slug ?? '' ),
             'finder_url_refcode'  => $this->finder_base_url . '?showHotelByRefCode=' . ( $hotel->refCode ?? '' ),
             'finder_add_slug'     => $this->finder_base_url . '?addHotelBySlug=' . ( $hotel->slug ?? '' ),
@@ -4567,9 +5571,50 @@ class Seminargo_Hotel_Importer {
         // This ensures consistency and handles all hotels + images
         $existing_progress = get_option( 'seminargo_batched_import_progress', null );
 
+        // CRITICAL: Detect stuck processes (running > 2 hours)
+        if ( $existing_progress && $existing_progress['status'] === 'running' ) {
+            $running_time = time() - ( $existing_progress['start_time'] ?? time() );
+
+            if ( $running_time > 7200 ) { // 2 hours = stuck
+                $this->log( 'error', '⚠️ STUCK PROCESS DETECTED! Process has been running for ' . round($running_time / 3600, 1) . ' hours. Resetting...' );
+
+                // Mark as failed and archive logs
+                $existing_progress['status'] = 'failed';
+                $existing_progress['error'] = 'Timeout after ' . $running_time . ' seconds';
+                $existing_progress['reset_time'] = time();
+                $existing_progress['phase'] = 'timeout'; // Mark phase as timeout
+
+                $this->flush_logs();
+
+                // IMPORTANT: Archive stuck process logs to history
+                $this->archive_current_logs_to_history( $existing_progress );
+
+                // Clear the progress to start fresh
+                $existing_progress = null;
+
+                $this->log( 'info', '✅ Stuck process reset. Starting new import...' );
+                $this->flush_logs();
+            }
+        }
+
         // If no import is running, start a new one
         if ( ! $existing_progress || $existing_progress['status'] !== 'running' ) {
-            $this->log( 'info', '🤖 Auto-import: Starting new batched import...' );
+            // OPTIMIZATION: Determine if we need full sync or incremental
+            // Full sync: Once per week (all hotels + all images)
+            // Incremental: Every other run (only new/updated hotels)
+            $last_full_sync = get_option( $this->last_full_sync_option, 0 );
+            $time_since_full_sync = time() - $last_full_sync;
+            $one_week = 7 * 24 * 60 * 60; // 7 days in seconds
+
+            $is_full_sync = ( $time_since_full_sync > $one_week );
+            $sync_type = $is_full_sync ? 'FULL' : 'INCREMENTAL';
+
+            $this->log( 'info', "🤖 Auto-import: Starting new {$sync_type} sync..." );
+            if ( $is_full_sync ) {
+                $this->log( 'info', "📅 Last full sync was " . round($time_since_full_sync / 86400, 1) . " days ago" );
+            } else {
+                $this->log( 'info', "⚡ Incremental sync - processing only new/updated hotels" );
+            }
             $this->flush_logs();
 
             // Initialize progress (same as manual import)
@@ -4585,6 +5630,8 @@ class Seminargo_Hotel_Importer {
                 'drafted' => 0,
                 'errors' => 0,
                 'start_time' => time(),
+                'sync_type' => $sync_type, // Track if this is FULL or INCREMENTAL
+                'is_full_sync' => $is_full_sync,
             ];
 
             update_option( 'seminargo_batched_import_progress', $progress, false );
@@ -4618,6 +5665,7 @@ class Seminargo_Hotel_Importer {
             hotelList(skip: ' . $offset . ', limit: ' . $limit . ') {
                 id
                 slug
+                migSlug
                 refCode
                 name
                 businessName
@@ -4766,6 +5814,418 @@ class Seminargo_Hotel_Importer {
             'next_run_formatted' => $next_run ? date_i18n( 'Y-m-d H:i:s', $next_run ) : 'Not scheduled',
             'last_run_formatted' => ! empty( $progress['last_run'] ) && $progress['last_run'] > 0 ? date_i18n( 'Y-m-d H:i:s', $progress['last_run'] ) : null,
         ] );
+    }
+
+    /**
+     * AJAX: Force reschedule cron to twicedaily
+     */
+    public function ajax_force_reschedule_cron() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        // Get info before clearing
+        $old_next_run = wp_next_scheduled( 'seminargo_hotels_cron' );
+        $old_schedule = false;
+        if ( $old_next_run ) {
+            $crons = _get_cron_array();
+            foreach ( $crons as $timestamp => $cron ) {
+                if ( isset( $cron['seminargo_hotels_cron'] ) ) {
+                    $old_schedule = $cron['seminargo_hotels_cron'];
+                    break;
+                }
+            }
+        }
+
+        // Force clear ALL scheduled events for this hook
+        $cleared = wp_clear_scheduled_hook( 'seminargo_hotels_cron' );
+
+        // Manually schedule with every_four_hours (4 hours = 6x daily)
+        $next_time = time() + ( 4 * HOUR_IN_SECONDS ); // Exactly 4 hours from now
+        $scheduled = wp_schedule_event( $next_time, 'every_four_hours', 'seminargo_hotels_cron' );
+
+        $new_next_run = wp_next_scheduled( 'seminargo_hotels_cron' );
+
+        wp_send_json_success( [
+            'message' => 'Cron rescheduled to every 4 hours (6x daily)',
+            'cleared' => $cleared,
+            'old_next_run' => $old_next_run ? date_i18n( 'Y-m-d H:i:s', $old_next_run ) : 'None',
+            'next_run' => $new_next_run,
+            'next_run_formatted' => $new_next_run ? date_i18n( 'Y-m-d H:i:s', $new_next_run ) : 'Not scheduled',
+            'scheduled_result' => $scheduled,
+        ] );
+    }
+
+    /**
+     * AJAX: Save Brevo API Key
+     */
+    public function ajax_save_brevo_api_key() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $api_key = isset( $_POST['api_key'] ) ? sanitize_text_field( $_POST['api_key'] ) : '';
+
+        if ( empty( $api_key ) ) {
+            wp_send_json_error( 'API key cannot be empty' );
+        }
+
+        // Validate format (starts with xkeysib-)
+        if ( strpos( $api_key, 'xkeysib-' ) !== 0 ) {
+            wp_send_json_error( 'Invalid API key format. Should start with xkeysib-' );
+        }
+
+        update_option( 'seminargo_brevo_api_key', $api_key );
+
+        wp_send_json_success( [
+            'message' => 'API Key saved successfully',
+        ] );
+    }
+
+    /**
+     * AJAX: Get sync history
+     * Returns last 20 sync runs with logs and stats
+     */
+    public function ajax_get_sync_history() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $limit = isset( $_GET['limit'] ) ? intval( $_GET['limit'] ) : 20;
+        $history = $this->get_sync_history( $limit );
+
+        wp_send_json_success( [
+            'history' => $history,
+            'total' => count( $history ),
+        ] );
+    }
+
+    /**
+     * AJAX: Stop/cancel current import
+     */
+    public function ajax_stop_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $progress = get_option( 'seminargo_batched_import_progress', null );
+
+        if ( ! $progress || $progress['status'] !== 'running' ) {
+            wp_send_json_error( 'No import is currently running' );
+            return;
+        }
+
+        $this->log( 'warning', '⏹ Import manually stopped by user' );
+        $this->flush_logs();
+
+        // Archive logs before stopping
+        $progress['status'] = 'cancelled';
+        $progress['phase'] = 'cancelled';
+        $this->archive_current_logs_to_history( $progress );
+
+        // Clear progress
+        delete_option( 'seminargo_batched_import_progress' );
+
+        wp_send_json_success( [
+            'message' => 'Import stopped successfully',
+        ] );
+    }
+
+    /**
+     * AJAX: Resume/continue stalled import
+     * DIRECTLY executes the next batch instead of relying on cron
+     */
+    public function ajax_resume_import() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $progress = get_option( 'seminargo_batched_import_progress', null );
+
+        if ( ! $progress || $progress['status'] !== 'running' ) {
+            wp_send_json_error( 'No import is currently running' );
+            return;
+        }
+
+        $this->log( 'info', '▶ Manually resuming import - executing batch directly...' );
+        $this->flush_logs();
+
+        // CRITICAL: Don't rely on wp-cron - execute batch DIRECTLY
+        // This bypasses unreliable spawn_cron() and wp_remote_post()
+        // Call process_single_batch() in background via async HTTP to this same endpoint
+
+        // Trigger via separate async request to avoid timeout
+        $resume_url = admin_url( 'admin-ajax.php?action=seminargo_execute_batch_direct' );
+        wp_remote_post( $resume_url, [
+            'timeout' => 0.01,
+            'blocking' => false,
+            'sslverify' => apply_filters( 'https_local_ssl_verify', false ),
+        ] );
+
+        $this->log( 'success', '✅ Resume triggered - executing next batch directly' );
+        $this->flush_logs();
+
+        wp_send_json_success( [
+            'message' => 'Batch execution triggered',
+            'progress' => $progress,
+        ] );
+    }
+
+    /**
+     * AJAX: Execute batch directly (called by resume)
+     * Runs process_single_batch() synchronously
+     */
+    public function ajax_execute_batch_direct() {
+        // No permission check - this is triggered internally
+        // Only execute if import is running
+        $progress = get_option( 'seminargo_batched_import_progress', null );
+
+        if ( ! $progress || $progress['status'] !== 'running' ) {
+            return; // Silently exit if not running
+        }
+
+        // Execute the batch directly
+        $this->process_single_batch();
+
+        // No response needed - this runs async
+        exit;
+    }
+
+    /**
+     * AJAX: Find duplicate hotels
+     */
+    public function ajax_find_duplicates() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $duplicates = $this->find_duplicate_hotels();
+        
+        wp_send_json_success( [
+            'duplicates' => $duplicates,
+            'total_duplicates' => count( $duplicates ),
+            'total_to_remove' => array_sum( array_map( function( $group ) {
+                return count( $group ) - 1; // Keep 1, remove the rest
+            }, $duplicates ) ),
+        ] );
+    }
+
+    /**
+     * AJAX: Cleanup duplicate hotels
+     */
+    public function ajax_cleanup_duplicates() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Permission denied' );
+        }
+
+        $dry_run = isset( $_POST['dry_run'] ) && $_POST['dry_run'] === 'true';
+        $result = $this->cleanup_duplicate_hotels( $dry_run );
+        
+        wp_send_json_success( $result );
+    }
+
+    /**
+     * Find duplicate hotels by hotel_id or ref_code
+     */
+    private function find_duplicate_hotels() {
+        global $wpdb;
+        
+        // Find duplicates by hotel_id
+        $duplicates_by_id = $wpdb->get_results( "
+            SELECT pm.meta_value as hotel_id, COUNT(*) as count, GROUP_CONCAT(p.ID) as post_ids
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'hotel'
+            AND p.post_status IN ('publish', 'draft')
+            AND pm.meta_key = 'hotel_id'
+            AND pm.meta_value != ''
+            GROUP BY pm.meta_value
+            HAVING COUNT(*) > 1
+        ", ARRAY_A );
+
+        // Find duplicates by ref_code
+        $duplicates_by_ref = $wpdb->get_results( "
+            SELECT pm.meta_value as ref_code, COUNT(*) as count, GROUP_CONCAT(p.ID) as post_ids
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'hotel'
+            AND p.post_status IN ('publish', 'draft')
+            AND pm.meta_key = 'ref_code'
+            AND pm.meta_value != ''
+            GROUP BY pm.meta_value
+            HAVING COUNT(*) > 1
+        ", ARRAY_A );
+
+        $duplicate_groups = [];
+
+        // Process hotel_id duplicates
+        foreach ( $duplicates_by_id as $dup ) {
+            $post_ids = array_map( 'intval', explode( ',', $dup['post_ids'] ) );
+            $hotel_id = $dup['hotel_id'];
+            
+            // Get hotel details
+            $hotels = [];
+            foreach ( $post_ids as $post_id ) {
+                $hotel = get_post( $post_id );
+                if ( $hotel ) {
+                    $hotels[] = [
+                        'id' => $post_id,
+                        'title' => $hotel->post_title,
+                        'hotel_id' => get_post_meta( $post_id, 'hotel_id', true ),
+                        'ref_code' => get_post_meta( $post_id, 'ref_code', true ),
+                        'has_images' => has_post_thumbnail( $post_id ),
+                        'meta_count' => $this->count_meta_fields( $post_id ),
+                        'date' => $hotel->post_date,
+                    ];
+                }
+            }
+            
+            // Sort by completeness (most complete first)
+            usort( $hotels, function( $a, $b ) {
+                if ( $a['meta_count'] !== $b['meta_count'] ) {
+                    return $b['meta_count'] - $a['meta_count'];
+                }
+                if ( $a['has_images'] !== $b['has_images'] ) {
+                    return $b['has_images'] ? 1 : -1;
+                }
+                return strtotime( $b['date'] ) - strtotime( $a['date'] );
+            });
+            
+            $duplicate_groups[] = [
+                'type' => 'hotel_id',
+                'value' => $hotel_id,
+                'count' => count( $hotels ),
+                'keep' => $hotels[0],
+                'remove' => array_slice( $hotels, 1 ),
+            ];
+        }
+
+        // Process ref_code duplicates (only if not already in hotel_id duplicates)
+        foreach ( $duplicates_by_ref as $dup ) {
+            $post_ids = array_map( 'intval', explode( ',', $dup['post_ids'] ) );
+            $ref_code = $dup['ref_code'];
+            
+            // Skip if already handled by hotel_id
+            $already_handled = false;
+            foreach ( $duplicate_groups as $group ) {
+                if ( in_array( $post_ids[0], array_column( $group['remove'], 'id' ) ) || 
+                     $group['keep']['id'] === $post_ids[0] ) {
+                    $already_handled = true;
+                    break;
+                }
+            }
+            
+            if ( $already_handled ) {
+                continue;
+            }
+            
+            // Get hotel details
+            $hotels = [];
+            foreach ( $post_ids as $post_id ) {
+                $hotel = get_post( $post_id );
+                if ( $hotel ) {
+                    $hotels[] = [
+                        'id' => $post_id,
+                        'title' => $hotel->post_title,
+                        'hotel_id' => get_post_meta( $post_id, 'hotel_id', true ),
+                        'ref_code' => get_post_meta( $post_id, 'ref_code', true ),
+                        'has_images' => has_post_thumbnail( $post_id ),
+                        'meta_count' => $this->count_meta_fields( $post_id ),
+                        'date' => $hotel->post_date,
+                    ];
+                }
+            }
+            
+            // Sort by completeness
+            usort( $hotels, function( $a, $b ) {
+                if ( $a['meta_count'] !== $b['meta_count'] ) {
+                    return $b['meta_count'] - $a['meta_count'];
+                }
+                if ( $a['has_images'] !== $b['has_images'] ) {
+                    return $b['has_images'] ? 1 : -1;
+                }
+                return strtotime( $b['date'] ) - strtotime( $a['date'] );
+            });
+            
+            $duplicate_groups[] = [
+                'type' => 'ref_code',
+                'value' => $ref_code,
+                'count' => count( $hotels ),
+                'keep' => $hotels[0],
+                'remove' => array_slice( $hotels, 1 ),
+            ];
+        }
+
+        return $duplicate_groups;
+    }
+
+    /**
+     * Count meta fields for a post (to determine completeness)
+     */
+    private function count_meta_fields( $post_id ) {
+        global $wpdb;
+        $count = $wpdb->get_var( $wpdb->prepare( "
+            SELECT COUNT(*) 
+            FROM {$wpdb->postmeta} 
+            WHERE post_id = %d 
+            AND meta_key NOT LIKE '\_%'
+        ", $post_id ) );
+        return intval( $count );
+    }
+
+    /**
+     * Cleanup duplicate hotels
+     */
+    private function cleanup_duplicate_hotels( $dry_run = true ) {
+        $duplicates = $this->find_duplicate_hotels();
+        
+        $removed = 0;
+        $kept = 0;
+        $errors = 0;
+        $details = [];
+
+        foreach ( $duplicates as $group ) {
+            $keep_id = $group['keep']['id'];
+            $remove_ids = array_column( $group['remove'], 'id' );
+            
+            foreach ( $remove_ids as $remove_id ) {
+                if ( $dry_run ) {
+                    $details[] = sprintf(
+                        '[DRY RUN] Would remove hotel #%d "%s" (keep #%d "%s")',
+                        $remove_id,
+                        $group['remove'][array_search( $remove_id, array_column( $group['remove'], 'id' ) )]['title'],
+                        $keep_id,
+                        $group['keep']['title']
+                    );
+                    $removed++;
+                } else {
+                    // Move to trash (safer than permanent delete)
+                    $result = wp_trash_post( $remove_id );
+                    if ( $result ) {
+                        $details[] = sprintf(
+                            'Removed duplicate hotel #%d "%s" (kept #%d "%s")',
+                            $remove_id,
+                            $group['remove'][array_search( $remove_id, array_column( $group['remove'], 'id' ) )]['title'],
+                            $keep_id,
+                            $group['keep']['title']
+                        );
+                        $removed++;
+                    } else {
+                        $details[] = sprintf( 'ERROR: Failed to remove hotel #%d', $remove_id );
+                        $errors++;
+                    }
+                }
+            }
+            $kept++;
+        }
+
+        return [
+            'dry_run' => $dry_run,
+            'removed' => $removed,
+            'kept' => $kept,
+            'errors' => $errors,
+            'details' => $details,
+        ];
     }
 }
 
