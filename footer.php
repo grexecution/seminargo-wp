@@ -122,7 +122,7 @@
                             &copy; 2025 seminargo.com | Alle Rechte vorbehalten (Version 1.1.0)
                         </p>
                         <p class="footer-legal">
-                            <a href="<?php echo esc_url( home_url( '/agb' ) ); ?>"><?php esc_html_e( 'AGBs', 'seminargo' ); ?></a>
+                            <a href="<?php echo esc_url( home_url( '/agb-kunden/' ) ); ?>"><?php esc_html_e( 'AGBs', 'seminargo' ); ?></a>
                             <span class="separator">|</span>
                             <a href="<?php echo esc_url( home_url( '/datenschutz' ) ); ?>"><?php esc_html_e( 'Datenschutz', 'seminargo' ); ?></a>
                             <span class="separator">|</span>

@@ -125,7 +125,10 @@ get_header(); ?>
                                 <?php endif; ?>
 
                                 <div class="team-members-grid">
-                                    <?php foreach ($team_groups[$team_key] as $member) : ?>
+                                    <?php foreach ($team_groups[$team_key] as $member) :
+                                        // Check if this is a job vacancy entry
+                                        $is_vacancy = (stripos($member['name'], 'Wir suchen') !== false);
+                                    ?>
                                         <div class="team-member">
                                             <div class="team-member-image">
                                                 <?php if ($member['image']) : ?>
@@ -134,7 +137,11 @@ get_header(); ?>
                                                     <div class="team-member-placeholder"></div>
                                                 <?php endif; ?>
                                             </div>
-                                            <h3 class="team-member-name"><?php echo esc_html($member['name']); ?></h3>
+                                            <?php if ($is_vacancy) : ?>
+                                                <h3 class="team-member-name"><a href="mailto:sandra.weindorfer@symposionhotels.at" class="vacancy-link"><?php echo esc_html($member['name']); ?></a></h3>
+                                            <?php else : ?>
+                                                <h3 class="team-member-name"><?php echo esc_html($member['name']); ?></h3>
+                                            <?php endif; ?>
                                             <p class="team-member-position"><?php echo esc_html($member['position']); ?></p>
                                         </div>
                                     <?php endforeach; ?>

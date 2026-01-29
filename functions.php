@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Define theme constants
  */
-define( 'SEMINARGO_VERSION', '2.6.1' );
+define( 'SEMINARGO_VERSION', '3.0.1' );
 define( 'SEMINARGO_THEME_PATH', get_template_directory() );
 define( 'SEMINARGO_THEME_URL', get_template_directory_uri() );
 define( 'SEMINARGO_ASSETS_PATH', SEMINARGO_THEME_PATH . '/assets/' );
@@ -52,7 +52,7 @@ function seminargo_get_api_url() {
 
 /**
  * Get Finder base URL based on environment
- * 
+ *
  * @return string Finder base URL
  */
 function seminargo_get_finder_url() {
@@ -60,7 +60,7 @@ function seminargo_get_finder_url() {
     if ( $env === 'production' ) {
         return 'https://lister.seminargo.com/';
     } else {
-        return 'https://finder.dev.seminargo.eu/';
+        return 'https://lister-staging.seminargo.com/';
     }
 }
 
@@ -91,6 +91,148 @@ function seminargo_get_platform_widget_js_url() {
         return 'https://platform-widget.dev.seminargo.eu/widget.js';
     }
 }
+
+/**
+ * Get Lister base URL based on environment
+ *
+ * @return string Lister base URL
+ */
+function seminargo_get_lister_url() {
+    $env = seminargo_get_environment();
+    if ( $env === 'production' ) {
+        return 'https://lister.seminargo.com';
+    } else {
+        return 'https://lister-staging.seminargo.com';
+    }
+}
+
+/**
+ * Convert lister URLs based on current environment
+ * Replaces lister.seminargo.com with staging or production URL
+ * Also handles old staging URL variants that need conversion
+ *
+ * @param string $url The URL to convert
+ * @return string The converted URL
+ */
+function seminargo_convert_lister_url( $url ) {
+    if ( empty( $url ) || ! is_string( $url ) ) {
+        return $url;
+    }
+
+    $env = seminargo_get_environment();
+
+    if ( $env === 'staging' ) {
+        // Convert production URLs to staging
+
+        // Convert lister.seminargo.com to lister-staging.seminargo.com
+        $url = str_replace(
+            'https://lister.seminargo.com',
+            'https://lister-staging.seminargo.com',
+            $url
+        );
+        $url = str_replace(
+            'http://lister.seminargo.com',
+            'https://lister-staging.seminargo.com',
+            $url
+        );
+
+        // Convert finder.dev.seminargo.eu to lister-staging.seminargo.com
+        $url = str_replace(
+            'https://finder.dev.seminargo.eu',
+            'https://lister-staging.seminargo.com',
+            $url
+        );
+        $url = str_replace(
+            'http://finder.dev.seminargo.eu',
+            'https://lister-staging.seminargo.com',
+            $url
+        );
+
+        // Convert lister-dev.seminargo.com to lister-staging.seminargo.com
+        $url = str_replace(
+            'https://lister-dev.seminargo.com',
+            'https://lister-staging.seminargo.com',
+            $url
+        );
+        $url = str_replace(
+            'http://lister-dev.seminargo.com',
+            'https://lister-staging.seminargo.com',
+            $url
+        );
+
+    } else {
+        // Convert staging URLs to production
+
+        // Convert lister-staging.seminargo.com to lister.seminargo.com
+        $url = str_replace(
+            'https://lister-staging.seminargo.com',
+            'https://lister.seminargo.com',
+            $url
+        );
+        $url = str_replace(
+            'http://lister-staging.seminargo.com',
+            'https://lister.seminargo.com',
+            $url
+        );
+
+        // Convert finder.dev.seminargo.eu to lister.seminargo.com
+        $url = str_replace(
+            'https://finder.dev.seminargo.eu',
+            'https://lister.seminargo.com',
+            $url
+        );
+        $url = str_replace(
+            'http://finder.dev.seminargo.eu',
+            'https://lister.seminargo.com',
+            $url
+        );
+
+        // Convert lister-dev.seminargo.com to lister.seminargo.com
+        $url = str_replace(
+            'https://lister-dev.seminargo.com',
+            'https://lister.seminargo.com',
+            $url
+        );
+        $url = str_replace(
+            'http://lister-dev.seminargo.com',
+            'https://lister.seminargo.com',
+            $url
+        );
+    }
+
+    return $url;
+}
+
+/**
+ * Filter navigation menu URLs to convert lister links based on environment
+ *
+ * @param array $items Navigation menu items
+ * @return array Modified menu items
+ */
+function seminargo_filter_nav_menu_lister_urls( $items ) {
+    foreach ( $items as $item ) {
+        if ( ! empty( $item->url ) ) {
+            $item->url = seminargo_convert_lister_url( $item->url );
+        }
+    }
+    return $items;
+}
+add_filter( 'wp_nav_menu_objects', 'seminargo_filter_nav_menu_lister_urls', 10, 1 );
+
+/**
+ * Filter post content to convert lister URLs based on environment
+ *
+ * @param string $content Post content
+ * @return string Modified content
+ */
+function seminargo_filter_content_lister_urls( $content ) {
+    if ( empty( $content ) ) {
+        return $content;
+    }
+
+    return seminargo_convert_lister_url( $content );
+}
+add_filter( 'the_content', 'seminargo_filter_content_lister_urls', 20 );
 
 /**
  * Add Environment Toggle to Admin Menu (removed - now on import page)
@@ -540,6 +682,11 @@ if ( ! isset( $content_width ) ) {
 require_once SEMINARGO_INC_PATH . 'logo-slider-manager.php';
 
 /**
+ * Include Homepage Content Admin Interface
+ */
+require_once SEMINARGO_INC_PATH . 'homepage-content-admin.php';
+
+/**
  * Theme setup
  */
 if ( ! function_exists( 'seminargo_setup' ) ) {
@@ -778,29 +925,63 @@ if ( file_exists( SEMINARGO_INC_PATH . 'admin-tweaks.php' ) ) {
 
 
 /**
- * Output CTA Section with static content
+ * Output CTA Section with custom fields (Global - affects multiple pages)
  */
 function seminargo_cta_section() {
+    // Get homepage ID for custom fields
+    $homepage_id = get_option( 'page_on_front' );
+
+    // Get custom field values with fallbacks to original defaults
+    $eyebrow = get_post_meta( $homepage_id, 'cta_eyebrow', true ) ?: 'Schnell · Persönlich · Kostenlos';
+    $heading = get_post_meta( $homepage_id, 'cta_heading', true ) ?: 'Ihre Traum-Location in 24 Stunden';
+    $description = get_post_meta( $homepage_id, 'cta_description', true ) ?: 'Unsere Experten kennen jede Location persönlich. Sie sagen uns, was Sie brauchen – wir liefern maßgeschneiderte Empfehlungen. Professionell, schnell und 100% kostenfrei.';
+
+    $btn1_text = get_post_meta( $homepage_id, 'cta_btn1_text', true ) ?: 'Sofort Anrufen';
+    $btn1_url = get_post_meta( $homepage_id, 'cta_btn1_url', true ) ?: 'tel:+43190858';
+
+    $btn2_text = get_post_meta( $homepage_id, 'cta_btn2_text', true ) ?: 'Beratung anfragen';
+    $btn2_url = get_post_meta( $homepage_id, 'cta_btn2_url', true ) ?: 'mailto:info@seminargo.com';
+
     get_template_part( 'template-parts/cta-section', null, [
-        'eyebrow' => 'Schnell · Persönlich · Kostenlos',
-        'heading' => 'Ihre Traum-Location in 24 Stunden',
-        'description' => 'Unsere Experten kennen jede Location persönlich. Sie sagen uns, was Sie brauchen – wir liefern maßgeschneiderte Empfehlungen. Professionell, schnell und 100% kostenfrei.',
+        'eyebrow' => $eyebrow,
+        'heading' => $heading,
+        'description' => $description,
         'buttons' => [
             [
-                'text' => 'Sofort Anrufen',
-                'url' => 'tel:+43190858',
+                'text' => $btn1_text,
+                'url' => $btn1_url,
                 'icon' => 'phone',
                 'style' => 'white'
             ],
             [
-                'text' => 'Beratung anfragen',
-                'url' => 'mailto:info@seminargo.com',
+                'text' => $btn2_text,
+                'url' => $btn2_url,
                 'icon' => 'email',
                 'style' => 'outline-white'
             ]
         ],
         'style' => 'gradient'
     ] );
+}
+
+/**
+ * Get hotel rooms label (Global - from homepage custom fields)
+ *
+ * @return string Rooms label
+ */
+function seminargo_get_rooms_label() {
+    $homepage_id = get_option( 'page_on_front' );
+    return get_post_meta( $homepage_id, 'hotel_rooms_label', true ) ?: 'Tagungsräume';
+}
+
+/**
+ * Get hotel capacity label (Global - from homepage custom fields)
+ *
+ * @return string Capacity label
+ */
+function seminargo_get_capacity_label() {
+    $homepage_id = get_option( 'page_on_front' );
+    return get_post_meta( $homepage_id, 'hotel_capacity_label', true ) ?: 'max. Personen';
 }
 
 /**

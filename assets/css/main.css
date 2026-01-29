@@ -6711,6 +6711,18 @@ a.btn-info-link svg {
     color: #AC2A6E;
 }
 
+/* Vacancy link styling */
+.team-member-name .vacancy-link {
+    color: #AC2A6E;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.team-member-name .vacancy-link:hover {
+    color: #8A1F56;
+    text-decoration: underline;
+}
+
 .no-team-members {
     text-align: center;
     font-size: 1.125rem;
