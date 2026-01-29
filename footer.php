@@ -121,13 +121,25 @@
                         <p class="footer-copy">
                             &copy; 2025 seminargo.com | Alle Rechte vorbehalten (Version 1.1.0)
                         </p>
-                        <p class="footer-legal">
-                            <a href="<?php echo esc_url( home_url( '/agb-kunden/' ) ); ?>"><?php esc_html_e( 'AGBs', 'seminargo' ); ?></a>
-                            <span class="separator">|</span>
-                            <a href="<?php echo esc_url( home_url( '/datenschutz' ) ); ?>"><?php esc_html_e( 'Datenschutz', 'seminargo' ); ?></a>
-                            <span class="separator">|</span>
-                            <a href="<?php echo esc_url( home_url( '/impressum' ) ); ?>"><?php esc_html_e( 'Impressum', 'seminargo' ); ?></a>
-                        </p>
+                        <div class="footer-legal">
+                            <?php if ( has_nav_menu( 'footer-legal' ) ) : ?>
+                                <?php
+                                wp_nav_menu( array(
+                                    'theme_location' => 'footer-legal',
+                                    'container'      => false,
+                                    'menu_class'     => 'footer-legal-menu',
+                                    'depth'          => 1,
+                                    'fallback_cb'    => false,
+                                ) );
+                                ?>
+                            <?php else : ?>
+                                <a href="<?php echo esc_url( home_url( '/agb-kunden/' ) ); ?>"><?php esc_html_e( 'AGBs', 'seminargo' ); ?></a>
+                                <span class="separator">|</span>
+                                <a href="<?php echo esc_url( home_url( '/datenschutz' ) ); ?>"><?php esc_html_e( 'Datenschutz', 'seminargo' ); ?></a>
+                                <span class="separator">|</span>
+                                <a href="<?php echo esc_url( home_url( '/impressum' ) ); ?>"><?php esc_html_e( 'Impressum', 'seminargo' ); ?></a>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             </div>

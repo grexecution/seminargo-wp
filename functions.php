@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Define theme constants
  */
-define( 'SEMINARGO_VERSION', '3.0.1' );
+define( 'SEMINARGO_VERSION', '3.0.2' );
 define( 'SEMINARGO_THEME_PATH', get_template_directory() );
 define( 'SEMINARGO_THEME_URL', get_template_directory_uri() );
 define( 'SEMINARGO_ASSETS_PATH', SEMINARGO_THEME_PATH . '/assets/' );
@@ -713,6 +713,7 @@ if ( ! function_exists( 'seminargo_setup' ) ) {
             'primary'         => esc_html__( 'Primary Menu', 'seminargo' ),
             'seminargo-side'  => esc_html__( 'Seminargo Sidemenu', 'seminargo' ),
             'footer'          => esc_html__( 'Footer Menu', 'seminargo' ),
+            'footer-legal'    => esc_html__( 'Footer Legal Links (AGBs, Datenschutz, Impressum)', 'seminargo' ),
             'social'          => esc_html__( 'Social Links Menu', 'seminargo' ),
         ) );
 

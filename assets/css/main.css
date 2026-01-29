@@ -3554,6 +3554,41 @@ a.btn-inspirier:hover {
     user-select: none;
 }
 
+/* Footer Legal Menu (when using WordPress menu) */
+.footer-legal-menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.footer-legal-menu li {
+    display: inline-flex;
+    align-items: center;
+}
+
+.footer-legal-menu li:not(:last-child)::after {
+    content: '|';
+    color: #4b5563;
+    margin-left: 0.5rem;
+    user-select: none;
+}
+
+.footer-legal-menu a {
+    color: #9ca3af;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.footer-legal-menu a:hover {
+    color: white;
+    text-decoration: underline;
+}
+
 /* Hide WPML Development Banner */
 .otgs-development-site-front-end,
 .otgs-development-site-front-end-js,
